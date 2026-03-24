@@ -22,8 +22,10 @@ from pydantic import BaseModel, Field
 from Bio import Entrez
 from pydantic_ai import Agent, RunContext
 
+from src.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  #* DEBUG, INFO
+logger.setLevel(logging.DEBUG)  #* DEBUG, INFO
 
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -40,12 +42,12 @@ load_dotenv()
 # -----------------------------
 OUTPUT_PATH = "data/radiology_db.csv"
 MODEL = "openai:Qwen/Qwen2.5-7B-Instruct"  # only if VLLM not set
-MAX_PAPERS = 10_000  # 1-10_000 - for debugging
+MAX_PAPERS = 250  # 1-10_000 - set to small number for debugging
 
 # MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
 PUBMED_QUERY = """
-("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti])
-AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR "Medical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
+("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti] OR ((dataset[tiab] OR database[tiab] OR data[tiab]) AND (benchmark[ti] OR challenge[ti])))
+AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR "Diagnostic Imaging"[tiab] OR "Medical Image"[tiab] OR "Medical Imaging"[tiab] OR "Biomedical Image"[ti] OR "Biomedical Imaging"[ti] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
 """  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
 
 INSTRUCTIONS = (
@@ -74,13 +76,14 @@ DATASET_AGENT_INSTRUCTIONS = "Extract dataset information"
 NUM_TRIES_AGENT = 5
 
 #* for real time, set to None
-IDS_TO_KEEP = {
-    "36204533",  # RadImageNet
-    "31831740",  # MIMIC-CXR
-    "32457287",  # UK Biobank
-    "23884657",  # TCIA
-    "41781626",  # Merlin
-}
+IDS_TO_KEEP = None
+# IDS_TO_KEEP = {
+#     "36204533",  # RadImageNet
+#     "31831740",  # MIMIC-CXR
+#     "32457287",  # UK Biobank
+#     "23884657",  # TCIA
+#     "41781626",  # Merlin
+# }
 
 overwrite = False
 
@@ -94,6 +97,8 @@ if vllm_port is not None:
     result = json.loads(result.stdout)
     model_id = result["data"][0]["id"]
     MODEL = f"openai:{model_id}"
+
+logger.info(f"Using model: {MODEL}")
 
 def getenv(key: str) -> str:
     value = os.getenv(key)
@@ -210,15 +215,35 @@ def fetch_pubmed_details(id_list, batch_size=200):
         results.extend(records["PubmedArticle"])
     return results
 
-def fetch_pubmed_citation_counts(pmids):
+def fetch_pubmed_citation_counts(pmids, batch_size=100):
     url = "https://icite.od.nih.gov/api/pubs"
-    response = requests.get(url, params={"pmids": ",".join(pmids)})
-    data = response.json()
+    results = {}
 
-    return {
-        str(p["pmid"]): p.get("citation_count", 0)
-        for p in data.get("data", [])
-    }
+    for batch in tqdm(list(chunked(pmids, batch_size)), desc="Fetching citation counts"):
+        try:
+            response = requests.get(url, params={"pmids": ",".join(batch)})
+            
+            if response.status_code != 200:
+                raise Exception(f"Status {response.status_code}")
+
+            data = response.json()
+
+            # fill results for successful ones
+            for p in data.get("data", []):
+                results[str(p["pmid"])] = p.get("citation_count", 0)
+
+            # handle missing PMIDs in response
+            returned_pmids = {str(p["pmid"]) for p in data.get("data", [])}
+            for pmid in batch:
+                if pmid not in returned_pmids:
+                    results[str(pmid)] = 0  # or None
+
+        except Exception:
+            # fallback: assign 0/None for entire failed batch
+            for pmid in batch:
+                results[str(pmid)] = 0  # or None
+
+    return results
 
 def _extract_title(article) -> str:
     try:
@@ -368,6 +393,7 @@ def normalize_tokens(text: str):
     return {t for t in tokens if t not in STOPWORDS}
 
 def name_matches_title(dataset_name: str, title: str) -> bool:
+    return False
     """
     Returns True if the dataset name has meaningful token overlap with the title,
     OR if the dataset name appears as a substring in the title (handles hyphenated
@@ -390,6 +416,8 @@ def name_matches_title(dataset_name: str, title: str) -> bool:
             return True
 
     return False
+
+
 
 # -----------------------------
 # LLM EXTRACTION (ASYNC)
@@ -430,9 +458,9 @@ async def extract_with_agent(
                     logger.debug(msg)
                 return None  # reject if no dataset name extracted
             else:
-                if not name_matches_title(output.name, title):  # reject if dataset name doesn't have meaningful match with title
+                if not name_matches_title(output.name, title) and await llm_thinks_not_dataset_paper(output.name, title, abstract):  # reject if dataset name doesn't have meaningful match with title AND LLM doesn't think it's a dataset paper
                     logger.debug(
-                        "Dataset name '%s' has no meaningful match with title, rejecting output.",
+                        "Dataset name '%s' has no meaningful match with title and LLM does not think it's a dataset paper, rejecting output.",
                         output.name
                     )
                     return None
