@@ -41,8 +41,10 @@ load_dotenv()
 # CONFIG
 # -----------------------------
 OUTPUT_PATH = "data/radiology_db.csv"
+OUTPUT_PATH_FAILED = "data/radiology_db_failed.csv"
 MODEL = "openai:Qwen/Qwen2.5-7B-Instruct"  # only if VLLM not set
-MAX_PAPERS = 250  # 1-10_000 - set to small number for debugging
+MAX_PAPERS = 9999  # 1-10_000 - set to small number for debugging
+MIN_CITATIONS = 10  # filter out papers with fewer than this many citations (set to 0 to disable)
 
 # MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
 PUBMED_QUERY = """
@@ -519,11 +521,16 @@ async def main():
     articles = fetch_pubmed_details(ids)
     citation_counts_by_pmid = fetch_pubmed_citation_counts(ids)
 
+    if MIN_CITATIONS > 0:
+        ids = [id for id in ids if citation_counts_by_pmid.get(id, 0) >= MIN_CITATIONS]
+        logger.info(f"After filtering out articles with fewer than {MIN_CITATIONS} citations, {len(ids)} articles remain.")
+
     if not articles:
         logger.warning("No articles found.")
         return
 
     extracted_datasets: List[RadiologyDataset] = []
+    failed_titles = []
     for article in tqdm(articles):
         publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid)
         title = publication_metadata.get("title")
@@ -543,12 +550,16 @@ async def main():
             extracted_datasets.append(dataset)
         else:
             logger.debug(f"Extraction failed for article: {title}")
+            failed_titles.append(title)
 
         await asyncio.sleep(1)  # rate limit
 
     # Convert extracted datasets → dict rows
     rows = [d.model_dump() for d in extracted_datasets]
     new_df = pd.DataFrame(rows)
+
+    logger.info(f"Extracted {len(new_df)} datasets from {len(articles)} articles.")
+    logger.info(f"Failed to extract datasets from {len(failed_titles)} articles.")
     
     # convert list fields to comma-separated strings for CSV output
     for col in new_df.columns:
@@ -562,6 +573,11 @@ async def main():
 
     # Save to CSV
     df.to_csv(OUTPUT_PATH, index=False)
+
+    if OUTPUT_PATH_FAILED:
+        df_failed = pd.DataFrame({"paper_title": failed_titles})
+        df_failed.to_csv(OUTPUT_PATH_FAILED, index=False)
+        logger.info(f"Failed extraction titles saved to {OUTPUT_PATH_FAILED}")
 
     logger.info(f"Extraction complete. Results saved to {OUTPUT_PATH}")
 
