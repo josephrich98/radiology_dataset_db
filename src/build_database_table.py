@@ -6,13 +6,15 @@ import asyncio
 import re
 import subprocess
 import json
+import xml.etree.ElementTree as ET
 from enum import Enum
 import logging
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 from collections import Counter
 from dotenv import load_dotenv
 
+from more_itertools import chunked
 from tqdm import tqdm
 from pydantic import BaseModel, Field
 from Bio import Entrez
@@ -36,70 +38,38 @@ load_dotenv()
 # -----------------------------
 OUTPUT_PATH = "data/datasets.json"
 MODEL = "openai:Qwen/Qwen2.5-7B-Instruct"  # only if VLLM not set
-MAX_PAPERS = 3  # 1-10_000 - for debugging
+MAX_PAPERS = 1  # 1-10_000 - for debugging
 
-QUERY = """
-(radiology dataset OR medical imaging dataset) AND (CT OR MRI OR X-ray)
+# MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
+PUBMED_QUERY = """
+("Databases, Factual"[MeSH] OR "Database Management Systems"[MeSH] OR dataset[tiab] OR database[tiab] OR "data collection"[tiab] OR "information repository"[tiab])
+AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR "Medical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
 """
 
 INSTRUCTIONS = (
-    "You extract structured information about radiology datasets from papers.\n\n"
-
-    "Step 1: Determine if this paper introduces or describes a dataset or imaging cohort.\n"
-    "- If YES → is_dataset_paper = true\n"
-    "- If NO → is_dataset_paper = false\n\n"
-
-    "A dataset paper typically:\n"
-    "- introduces or describes a named dataset, cohort, or biobank\n"
-    "- describes dataset size (participants/patients/images)\n"
-    "- uses phrases like 'we describe', 'we release', 'we present', 'here we describe'\n"
-    "- uses phrases like 'data collection', 'data management', 'imaging study', 'imaging enhancement'\n"
-    "- describes a population-based cohort or large-scale imaging initiative\n\n"
-
-    "IMPORTANT:\n"
-    "- Papers like 'MIMIC-CXR' ARE dataset papers even if phrased as 'here we describe'\n"
-    "- Papers like 'UK Biobank' ARE dataset papers even if phrased as 'this article provides an overview'\n"
-    "- Papers like 'RadImageNet' ARE dataset papers even if phrased as 'we describe'\n"
-    "- If the paper's PRIMARY contribution is a named dataset, cohort, or imaging resource, it IS a dataset paper\n"
-    "- Do NOT require the phrase 'we constructed'\n\n"
-
-    "Step 2:\n"
-    "- If is_dataset_paper = true → extract dataset info\n"
-    "- If false → leave fields empty\n"
-    "- The dataset name is often found directly in the paper title — use it if present\n"
+    "You MUST extract a dataset name.\n"
+    "Never return null for name.\n"
+    "If uncertain, choose the most likely dataset or cohort name.\n"
+    "Prefer names in the title.\n"
+    "Examples:\n"
+    "- UK Biobank\n"
+    "- MIMIC-CXR\n"
+    "- RadImageNet\n"
 )
 
+ADD_TEXT_EXTRACT = f"""
+Extract:
+- dataset name (best candidate; often found directly in the title, e.g. "UK Biobank", "MIMIC-CXR", "RadImageNet" — use the name as it appears)
+- number of patients or participants
+- number of imaging studies or images
+- imaging modalities: CT, MRI, X-ray, US, PET
+- body regions: brain, chest, abdomen, pelvis, limbs
+- additional data (reports, captions, segmentation, genomics, VQA, etc)
+"""
+
+DATASET_AGENT_INSTRUCTIONS = "Extract dataset information"
+
 ### END CONFIG ###
-
-DATASET_KEYWORDS = [
-    "we constructed",
-    "we collected",
-    "we curated",
-    "we assembled",
-    "we present a dataset",
-    "this dataset consists of",
-    "we introduce",
-    "we release",
-    "here we describe",
-    "we describe",
-    "we make available",
-    "publicly available dataset",
-    "publicly available database",
-    "de-identified publicly available",
-    "data collection",
-    "data management",
-    "imaging study",
-    "imaging enhancement",
-    "cohort study",
-    "population-based cohort",
-]
-
-USAGE_KEYWORDS = [
-    "we used the",
-    "we evaluated on",
-    "trained on",
-    "validated on",
-]
 
 vllm_port = os.getenv("VLLM_PORT")
 if vllm_port is not None:
@@ -110,16 +80,6 @@ if vllm_port is not None:
     model_id = result["data"][0]["id"]
     MODEL = f"openai:{model_id}"
 
-def is_dataset_paper_rule_based(text: str):
-    text = text.lower()
-
-    if any(k in text for k in DATASET_KEYWORDS):
-        return True
-    if any(k in text for k in USAGE_KEYWORDS):
-        return False
-
-    return None  # let LLM decide
-
 def getenv(key: str) -> str:
     value = os.getenv(key)
     if not value:
@@ -128,13 +88,11 @@ def getenv(key: str) -> str:
 
 
 Entrez.email = getenv("ENTREZ_EMAIL")
+if os.getenv("ENTREZ_API_KEY"):
+    logger.info("Using Entrez API key from environment variable.")
+    Entrez.api_key = getenv("ENTREZ_API_KEY")
 
-RADIMAGENET_TITLE = "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"
-RADIMAGENET_ABSTRACT = "Purpose: To demonstrate the value of pretraining with millions of radiologic images compared with ImageNet photographic images on downstream medical applications when using transfer learning. Materials and methods: This retrospective study included patients who underwent a radiologic study between 2005 and 2020 at an outpatient imaging facility. Key images and associated labels from the studies were retrospectively extracted from the original study interpretation. These images were used for RadImageNet model training with random weight initiation. The RadImageNet models were compared with ImageNet models using the area under the receiver operating characteristic curve (AUC) for eight classification tasks and using Dice scores for two segmentation problems. Results: The RadImageNet database consists of 1.35 million annotated medical images in 131 872 patients who underwent CT, MRI, and US for musculoskeletal, neurologic, oncologic, gastrointestinal, endocrine, abdominal, and pulmonary pathologic conditions. For transfer learning tasks on small datasets-thyroid nodules (US), breast masses (US), anterior cruciate ligament injuries (MRI), and meniscal tears (MRI)-the RadImageNet models demonstrated a significant advantage (P < .001) to ImageNet models (9.4%, 4.0%, 4.8%, and 4.5% AUC improvements, respectively). For larger datasets-pneumonia (chest radiography), COVID-19 (CT), SARS-CoV-2 (CT), and intracranial hemorrhage (CT)-the RadImageNet models also illustrated improved AUC (P < .001) by 1.9%, 6.1%, 1.7%, and 0.9%, respectively. Additionally, lesion localizations of the RadImageNet models were improved by 64.6% and 16.4% on thyroid and breast US datasets, respectively. Conclusion: RadImageNet pretrained models demonstrated better interpretability compared with ImageNet models, especially for smaller radiologic datasets.Keywords: CT, MR Imaging, US, Head/Neck, Thorax, Brain/Brain Stem, Evidence-based Medicine, Computer Applications-General (Informatics) Supplemental material is available for this article. Published under a CC BY 4.0 license.See also the commentary by Cadrin-Chênevert in this issue."
-RADIMAGENET_LINK = "https://doi.org/10.1148/ryai.210315"
-
-def get_radimagenet_seed_text():
-    return RADIMAGENET_TITLE, RADIMAGENET_ABSTRACT, RADIMAGENET_LINK
+PUBMED_QUERY = " ".join(PUBMED_QUERY.split())  # strip new lines
 
 # -----------------------------
 # SCHEMA
@@ -171,6 +129,10 @@ class RadiologyDataset(BaseModel):
     paper_title: Optional[str] = None
     paper_abstract: Optional[str] = None
     paper_link: Optional[str] = None
+    paper_year: Optional[int] = None
+    paper_authors: List[str] = Field(default_factory=list)
+    paper_journal: Optional[str] = None
+    paper_citation_count: Optional[int] = None
 
 
 # -----------------------------
@@ -180,7 +142,6 @@ class RadiologyDataset(BaseModel):
 class ExtractionDeps:
     title: str
     abstract: str
-    link: Optional[str]
 
 
 # -----------------------------
@@ -196,6 +157,7 @@ dataset_agent = Agent(
 )
 
 
+
 @dataset_agent.instructions
 async def add_text(ctx: RunContext[ExtractionDeps]) -> str:
     return f"""
@@ -203,56 +165,200 @@ Text:
 Title: {ctx.deps.title}
 Abstract: {ctx.deps.abstract}
 
-Extract:
-- dataset name (often found directly in the title, e.g. "UK Biobank", "MIMIC-CXR", "RadImageNet" — use the name as it appears)
-- number of patients or participants
-- number of imaging studies or images
-- imaging modalities: CT, MRI, X-ray, US, PET
-- body regions: brain, chest, abdomen, pelvis, limbs
-- additional data (reports, captions, segmentation, genomics, VQA, etc)
+{ADD_TEXT_EXTRACT}
 """
 
 
 # -----------------------------
 # PUBMED SEARCH
 # -----------------------------
-def search_pubmed(query: str, max_results: int):
+def search_pubmed(pubmed_query: str, max_results: int):
     logger.info("Searching PubMed...")
-    handle = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
+    pubmed_query = " ".join(pubmed_query.split())  # strip new lines
+    handle = Entrez.esearch(db="pubmed", term=pubmed_query, retmax=max_results)
     record = Entrez.read(handle)
     return record["IdList"]
 
 
-def fetch_pubmed_details(id_list: List[str]):
-    logger.info("Fetching article details from PubMed...")
-    handle = Entrez.efetch(db="pubmed", id=",".join(id_list), retmode="xml")
-    records = Entrez.read(handle)
-    return records["PubmedArticle"]
+def fetch_pubmed_details(id_list, batch_size=200):
+    results = []
+    # wrap in tqdm
+    for batch in tqdm(list(chunked(id_list, batch_size)), desc="Fetching PubMed details"):
+        handle = Entrez.efetch(
+            db="pubmed",
+            id=",".join(batch),
+            retmode="xml"
+        )
+        records = Entrez.read(handle)
+        results.extend(records["PubmedArticle"])
+    return results
 
+def fetch_pubmed_citation_counts(id_list: List[str]) -> Dict[str, Optional[int]]:
+    """
+    Fetch citation counts from PubMed esummary when available.
+    Uses PmcRefCount (citations from PubMed Central articles).
+    """
+    if not id_list:
+        return {}
 
-def extract_text(article):
+    logger.info("Fetching citation counts from PubMed summaries...")
     try:
-        title = article["MedlineCitation"]["Article"]["ArticleTitle"]
-    except:
-        title = ""
+        with Entrez.esummary(db="pubmed", id=",".join(id_list), retmode="xml") as handle:
+            xml_payload = handle.read()
+    except Exception as exc:
+        logger.warning("Unable to fetch citation counts from esummary: %s", exc)
+        return {}
 
+    if isinstance(xml_payload, bytes):
+        xml_payload = xml_payload.decode("utf-8", errors="ignore")
+
+    try:
+        root = ET.fromstring(xml_payload)
+    except ET.ParseError as exc:
+        logger.warning("Unable to parse citation count response: %s", exc)
+        return {}
+
+    citation_counts_by_pmid: Dict[str, Optional[int]] = {}
+    for docsum in root.findall(".//DocSum"):
+        pmid_node = docsum.find("./Id")
+        if pmid_node is None or not pmid_node.text:
+            continue
+
+        pmid = pmid_node.text.strip()
+        citation_count: Optional[int] = None
+
+        for item in docsum.findall("./Item"):
+            if item.attrib.get("Name") != "PmcRefCount":
+                continue
+            value = (item.text or "").strip()
+            if value.isdigit():
+                citation_count = int(value)
+            break
+
+        citation_counts_by_pmid[pmid] = citation_count
+
+    return citation_counts_by_pmid
+
+def _extract_title(article) -> str:
+    try:
+        return article["MedlineCitation"]["Article"]["ArticleTitle"]
+    except:
+        return ""
+
+def _extract_abstract(article) -> str:
     try:
         abstract_list = article["MedlineCitation"]["Article"]["Abstract"]["AbstractText"]
-        abstract = " ".join(abstract_list)
+        return " ".join(abstract_list)
     except:
-        abstract = ""
+        return ""
 
+def _extract_link(article) -> Optional[str]:
     try:
         article_id_list = article["PubmedData"]["ArticleIdList"]
         doi = None
         for a in article_id_list:
             if a.attributes.get("IdType") == "doi":
                 doi = str(a)
-        link = f"https://doi.org/{doi}" if doi else None
+        return f"https://doi.org/{doi}" if doi else None
     except:
-        link = None
+        return None
 
-    return title, abstract, link
+def _extract_year(article) -> Optional[int]:
+    try:
+        pub_date = article["MedlineCitation"]["Article"]["Journal"]["JournalIssue"]["PubDate"]
+    except Exception:
+        pub_date = {}
+
+    year_candidates = []
+    if isinstance(pub_date, dict):
+        year_candidates.append(pub_date.get("Year"))
+        year_candidates.append(pub_date.get("MedlineDate"))
+
+    try:
+        article_dates = article["MedlineCitation"]["Article"].get("ArticleDate", [])
+        if article_dates:
+            year_candidates.append(article_dates[0].get("Year"))
+    except Exception:
+        pass
+
+    for candidate in year_candidates:
+        if candidate is None:
+            continue
+        text = str(candidate)
+        match = re.search(r"\b(19|20)\d{2}\b", text)
+        if match:
+            return int(match.group(0))
+
+    return None
+
+
+def _extract_authors(article) -> List[str]:
+    try:
+        author_list = article["MedlineCitation"]["Article"].get("AuthorList", [])
+    except Exception:
+        return []
+
+    authors = []
+    for author in author_list:
+        collective = author.get("CollectiveName")
+        if collective:
+            authors.append(str(collective))
+            continue
+
+        last_name = author.get("LastName")
+        initials = author.get("Initials")
+        fore_name = author.get("ForeName")
+
+        if last_name and initials:
+            authors.append(f"{last_name} {initials}")
+        elif fore_name and last_name:
+            authors.append(f"{fore_name} {last_name}")
+        elif last_name:
+            authors.append(str(last_name))
+
+    return authors
+
+
+def _extract_journal(article) -> Optional[str]:
+    try:
+        journal = article["MedlineCitation"]["Article"]["Journal"].get("Title")
+        return str(journal) if journal else None
+    except Exception:
+        return None
+
+
+def _extract_pmid(article) -> Optional[str]:
+    try:
+        pmid = article["MedlineCitation"]["PMID"]
+        if pmid:
+            return str(pmid)
+    except Exception:
+        pass
+
+    try:
+        article_id_list = article["PubmedData"]["ArticleIdList"]
+        for article_id in article_id_list:
+            if article_id.attributes.get("IdType") == "pubmed":
+                return str(article_id)
+    except Exception:
+        pass
+
+    return None
+
+
+def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str, Optional[int]]] = None):
+    citation_counts_by_pmid = citation_counts_by_pmid or {}
+
+    pmid = _extract_pmid(article)
+    return {
+        "title": _extract_title(article),
+        "abstract": _extract_abstract(article),
+        "link": _extract_link(article),
+        "year": _extract_year(article),
+        "authors": _extract_authors(article),
+        "journal": _extract_journal(article),
+        "citation_count": citation_counts_by_pmid.get(pmid) if pmid else None,
+    }
 
 
 def serialize_dataset_output(dataset: Union[RadiologyDataset, str]) -> str:
@@ -304,16 +410,23 @@ def name_matches_title(dataset_name: str, title: str) -> bool:
 
     return False
 
-
 # -----------------------------
 # LLM EXTRACTION (ASYNC)
 # -----------------------------
-async def extract_with_agent(title: str, abstract: str, link: Optional[str]):
-    deps = ExtractionDeps(title=title, abstract=abstract, link=link)
+async def extract_with_agent(
+    title: str,
+    abstract: str,
+    publication_metadata: Optional[dict] = None,
+):
+    if not title or not abstract:
+        logger.debug("Missing title or abstract, skipping extraction.")
+        return None
+
+    deps = ExtractionDeps(title=title, abstract=abstract)
 
     try:
         result = await dataset_agent.run(
-            "Extract dataset information.", deps=deps
+            DATASET_AGENT_INSTRUCTIONS, deps=deps
         )
 
         output = result.output
@@ -321,7 +434,13 @@ async def extract_with_agent(title: str, abstract: str, link: Optional[str]):
         if isinstance(output, RadiologyDataset):
             output.paper_title = title
             output.paper_abstract = abstract
-            output.paper_link = link
+            
+            publication_metadata = publication_metadata or {}
+            output.paper_link = publication_metadata.get("link")
+            output.paper_year = publication_metadata.get("year")
+            output.paper_authors = publication_metadata.get("authors") or []
+            output.paper_journal = publication_metadata.get("journal")
+            output.paper_citation_count = publication_metadata.get("citation_count")
 
             if not output.name:
                 logger.debug("No dataset name extracted, rejecting output.")
@@ -329,7 +448,6 @@ async def extract_with_agent(title: str, abstract: str, link: Optional[str]):
                     logger.debug(msg)
                 return None  # reject if no dataset name extracted
             else:
-                # FIX: use improved name_matches_title instead of raw token overlap
                 if not name_matches_title(output.name, title):
                     logger.debug(
                         "Dataset name '%s' has no meaningful match with title, rejecting output.",
@@ -355,7 +473,7 @@ async def main():
     
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
 
-    ids = search_pubmed(QUERY, MAX_PAPERS)
+    ids = search_pubmed(PUBMED_QUERY, MAX_PAPERS)
     if not ids:
         logger.warning("No articles found.")
         return
@@ -364,6 +482,7 @@ async def main():
         logger.info(f"Only found {len(ids)} ids, less than the requested {MAX_PAPERS}.")
 
     articles = fetch_pubmed_details(ids)
+    citation_counts_by_pmid = fetch_pubmed_citation_counts(ids)
 
     if not articles:
         logger.warning("No articles found.")
@@ -374,17 +493,11 @@ async def main():
 
     extracted_datasets: List[RadiologyDataset] = []
     for article in tqdm(articles):
-        title, abstract, link = extract_text(article)
-        # title, abstract, link = get_radimagenet_seed_text()
+        publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid)
+        title = publication_metadata.get("title")
+        abstract = publication_metadata.get("abstract")
 
-        if not abstract:
-            continue
-
-        is_dataset_paper = is_dataset_paper_rule_based(title + " " + abstract)  #$ try to filter out non-dataset papers with simple rules before calling LLM
-        if is_dataset_paper is False:
-            continue  # skip papers that are likely not introducing a dataset
-
-        dataset = await extract_with_agent(title, abstract, link)
+        dataset = await extract_with_agent(title, abstract, publication_metadata)
         if isinstance(dataset, RadiologyDataset):
             extracted_datasets.append(dataset)
 
