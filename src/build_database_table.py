@@ -98,8 +98,6 @@ if vllm_port is not None:
     model_id = result["data"][0]["id"]
     MODEL = f"openai:{model_id}"
 
-logger.info(f"Using model: {MODEL}")
-
 def getenv(key: str) -> str:
     value = os.getenv(key)
     if not value:
@@ -109,7 +107,6 @@ def getenv(key: str) -> str:
 
 Entrez.email = getenv("ENTREZ_EMAIL")
 if os.getenv("ENTREZ_API_KEY"):
-    logger.info("Using Entrez API key from environment variable.")
     Entrez.api_key = getenv("ENTREZ_API_KEY")
 
 PUBMED_QUERY = " ".join(PUBMED_QUERY.split())  # strip new lines
@@ -393,7 +390,6 @@ def normalize_tokens(text: str):
     return {t for t in tokens if t not in STOPWORDS}
 
 def name_matches_title(dataset_name: str, title: str) -> bool:
-    return False
     """
     Returns True if the dataset name has meaningful token overlap with the title,
     OR if the dataset name appears as a substring in the title (handles hyphenated
@@ -489,6 +485,11 @@ async def main():
         logger.info(f"No existing output file found at {OUTPUT_PATH}. A new file will be created.")
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+
+    logger.info(f"Using model: {MODEL}")
+
+    if Entrez.api_key:
+        logger.info("Using Entrez API key")
 
     df = None
     titles_existing, pmids_existing = set(), set()

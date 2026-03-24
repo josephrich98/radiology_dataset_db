@@ -124,6 +124,8 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
 
             _perform_pubmed_search(module, specific_query, expected_dois=[expected_doi], expect_presence=expect_presence)
 
+@pytest.mark.integration
+@pytest.mark.slow
 def test_entrez_search_contains_expected_paper_dois(monkeypatch):
     papers = _paper_ground_truth()
 
@@ -135,7 +137,8 @@ def test_entrez_search_contains_expected_paper_dois(monkeypatch):
     expected_dates = _collect_expected_dates(papers, expected_papers)
     _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=expected_dates, expect_presence=True)
 
-
+@pytest.mark.integration
+@pytest.mark.slow
 def test_entrez_search_absent_for_irrelevant_paper_dois(monkeypatch):
     papers = _paper_irrelevant()
 
