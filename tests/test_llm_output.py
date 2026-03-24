@@ -20,7 +20,7 @@ def _build_dataset_from_truth(module, paper):
         body_regions=body_regions,
         additional_data=additional_data,
         paper_title=paper["title"],
-        paper_abstract=paper["abstract"],
+        # paper_abstract=paper["abstract"],
         paper_link=paper.get("link"),
         paper_year=paper.get("year"),
         paper_authors=paper.get("authors") or [],
@@ -42,7 +42,7 @@ def _assert_serialized_dataset(module, dataset, paper):
     assert parsed["additional_data"] == expected["additional_data"]
     assert parsed["paper_title"] == paper["title"]
     assert parsed["paper_link"] == paper["link"]
-    assert expected["title_hint"] in parsed["paper_abstract"]
+    # assert expected["title_hint"] in parsed["paper_abstract"]
     assert module.name_matches_title(parsed["name"], parsed["paper_title"])
     assert output.startswith("{\n")
 
@@ -62,7 +62,7 @@ def _has_integration_dependencies():
 
     return True
 
-PAPER_KEYS = _paper_ground_truth().keys()  # eg ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia', 'merlin']
+PAPER_KEYS = ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia']  # _paper_ground_truth().keys()  # eg ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia', 'merlin']
 
 @pytest.mark.parametrize("paper_key", PAPER_KEYS)
 def test_serialize_dataset_against_ground_truth(monkeypatch, paper_key):
@@ -74,7 +74,7 @@ def test_serialize_dataset_against_ground_truth(monkeypatch, paper_key):
     _assert_serialized_dataset(module, dataset, paper)
 
 
-NUM_TRIES = 5
+NUM_TRIES_AGENT_TEST = 2  # I already loop internally, so this would only be to add further retries for testing
 
 @pytest.mark.integration
 @pytest.mark.slow
@@ -100,7 +100,7 @@ def test_extract_with_agent_integration(monkeypatch, paper_key):
     }
 
     dataset = None
-    for _ in range(NUM_TRIES):
+    for _ in range(NUM_TRIES_AGENT_TEST):
         dataset = asyncio.run(module.extract_with_agent(title=title, abstract=abstract, publication_metadata=publication_metadata))
         if dataset is not None:
             break

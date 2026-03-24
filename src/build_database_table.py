@@ -3,6 +3,7 @@
 import os
 import time
 import asyncio
+import requests
 import re
 import subprocess
 import json
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from collections import Counter
 from dotenv import load_dotenv
 
+import pandas as pd
 from more_itertools import chunked
 from tqdm import tqdm
 from pydantic import BaseModel, Field
@@ -21,7 +23,7 @@ from Bio import Entrez
 from pydantic_ai import Agent, RunContext
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)  #* DEBUG, INFO
 
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -36,15 +38,15 @@ load_dotenv()
 # -----------------------------
 # CONFIG
 # -----------------------------
-OUTPUT_PATH = "data/datasets.json"
+OUTPUT_PATH = "data/radiology_db.csv"
 MODEL = "openai:Qwen/Qwen2.5-7B-Instruct"  # only if VLLM not set
-MAX_PAPERS = 1  # 1-10_000 - for debugging
+MAX_PAPERS = 10_000  # 1-10_000 - for debugging
 
 # MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
 PUBMED_QUERY = """
-("Databases, Factual"[MeSH] OR "Database Management Systems"[MeSH] OR dataset[tiab] OR database[tiab] OR "data collection"[tiab] OR "information repository"[tiab])
+("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti])
 AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR "Medical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
-"""
+"""  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
 
 INSTRUCTIONS = (
     "You MUST extract a dataset name.\n"
@@ -68,6 +70,19 @@ Extract:
 """
 
 DATASET_AGENT_INSTRUCTIONS = "Extract dataset information"
+
+NUM_TRIES_AGENT = 5
+
+#* for real time, set to None
+IDS_TO_KEEP = {
+    "36204533",  # RadImageNet
+    "31831740",  # MIMIC-CXR
+    "32457287",  # UK Biobank
+    "23884657",  # TCIA
+    "41781626",  # Merlin
+}
+
+overwrite = False
 
 ### END CONFIG ###
 
@@ -127,11 +142,12 @@ class RadiologyDataset(BaseModel):
     body_regions: List[BodyRegion] = Field(default_factory=list)
     additional_data: List[AdditionalData] = Field(default_factory=list)
     paper_title: Optional[str] = None
-    paper_abstract: Optional[str] = None
+    # paper_abstract: Optional[str] = None
     paper_link: Optional[str] = None
     paper_year: Optional[int] = None
     paper_authors: List[str] = Field(default_factory=list)
     paper_journal: Optional[str] = None
+    pmid: Optional[str] = None
     paper_citation_count: Optional[int] = None
 
 
@@ -174,6 +190,7 @@ Abstract: {ctx.deps.abstract}
 # -----------------------------
 def search_pubmed(pubmed_query: str, max_results: int):
     logger.info("Searching PubMed...")
+    logger.debug(f"PubMed query: {pubmed_query}")
     pubmed_query = " ".join(pubmed_query.split())  # strip new lines
     handle = Entrez.esearch(db="pubmed", term=pubmed_query, retmax=max_results)
     record = Entrez.read(handle)
@@ -193,51 +210,15 @@ def fetch_pubmed_details(id_list, batch_size=200):
         results.extend(records["PubmedArticle"])
     return results
 
-def fetch_pubmed_citation_counts(id_list: List[str]) -> Dict[str, Optional[int]]:
-    """
-    Fetch citation counts from PubMed esummary when available.
-    Uses PmcRefCount (citations from PubMed Central articles).
-    """
-    if not id_list:
-        return {}
+def fetch_pubmed_citation_counts(pmids):
+    url = "https://icite.od.nih.gov/api/pubs"
+    response = requests.get(url, params={"pmids": ",".join(pmids)})
+    data = response.json()
 
-    logger.info("Fetching citation counts from PubMed summaries...")
-    try:
-        with Entrez.esummary(db="pubmed", id=",".join(id_list), retmode="xml") as handle:
-            xml_payload = handle.read()
-    except Exception as exc:
-        logger.warning("Unable to fetch citation counts from esummary: %s", exc)
-        return {}
-
-    if isinstance(xml_payload, bytes):
-        xml_payload = xml_payload.decode("utf-8", errors="ignore")
-
-    try:
-        root = ET.fromstring(xml_payload)
-    except ET.ParseError as exc:
-        logger.warning("Unable to parse citation count response: %s", exc)
-        return {}
-
-    citation_counts_by_pmid: Dict[str, Optional[int]] = {}
-    for docsum in root.findall(".//DocSum"):
-        pmid_node = docsum.find("./Id")
-        if pmid_node is None or not pmid_node.text:
-            continue
-
-        pmid = pmid_node.text.strip()
-        citation_count: Optional[int] = None
-
-        for item in docsum.findall("./Item"):
-            if item.attrib.get("Name") != "PmcRefCount":
-                continue
-            value = (item.text or "").strip()
-            if value.isdigit():
-                citation_count = int(value)
-            break
-
-        citation_counts_by_pmid[pmid] = citation_count
-
-    return citation_counts_by_pmid
+    return {
+        str(p["pmid"]): p.get("citation_count", 0)
+        for p in data.get("data", [])
+    }
 
 def _extract_title(article) -> str:
     try:
@@ -326,7 +307,6 @@ def _extract_journal(article) -> Optional[str]:
     except Exception:
         return None
 
-
 def _extract_pmid(article) -> Optional[str]:
     try:
         pmid = article["MedlineCitation"]["PMID"]
@@ -357,6 +337,7 @@ def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str,
         "year": _extract_year(article),
         "authors": _extract_authors(article),
         "journal": _extract_journal(article),
+        "pmid": pmid,
         "citation_count": citation_counts_by_pmid.get(pmid) if pmid else None,
     }
 
@@ -433,13 +414,14 @@ async def extract_with_agent(
         logger.debug("LLM output: %s", output)
         if isinstance(output, RadiologyDataset):
             output.paper_title = title
-            output.paper_abstract = abstract
+            # output.paper_abstract = abstract
             
             publication_metadata = publication_metadata or {}
             output.paper_link = publication_metadata.get("link")
             output.paper_year = publication_metadata.get("year")
-            output.paper_authors = publication_metadata.get("authors") or []
+            output.paper_authors = publication_metadata.get("authors")
             output.paper_journal = publication_metadata.get("journal")
+            output.pmid = publication_metadata.get("pmid")
             output.paper_citation_count = publication_metadata.get("citation_count")
 
             if not output.name:
@@ -448,7 +430,7 @@ async def extract_with_agent(
                     logger.debug(msg)
                 return None  # reject if no dataset name extracted
             else:
-                if not name_matches_title(output.name, title):
+                if not name_matches_title(output.name, title):  # reject if dataset name doesn't have meaningful match with title
                     logger.debug(
                         "Dataset name '%s' has no meaningful match with title, rejecting output.",
                         output.name
@@ -467,19 +449,43 @@ async def extract_with_agent(
 # -----------------------------
 async def main():
     if os.path.exists(OUTPUT_PATH):
-        logger.warning("Will overwrite existing output file. If you want to keep it, please move or rename it before running the extraction.")
-        # logger.warning(f"Output file {OUTPUT_PATH} already exists. Please remove it before running the extraction.")
-        # return
-    
+        if overwrite:
+            confirm = input(f"Output file {OUTPUT_PATH} already exists. Do you want to overwrite it? (y/n): ")
+            if confirm.lower() != "y":
+                logger.info("Exiting without overwriting. Please set overwrite=False to append to the existing file, or move/rename it before running the extraction.")
+                return
+            os.remove(OUTPUT_PATH)
+        else:
+            logger.info(f"Output file {OUTPUT_PATH} already exists. Set overwrite=True to overwrite it, or move/rename it before running the extraction. This will append to it but not replace existing lines, so you may get duplicates if you run multiple times without changing the output path.")
+    else:
+        logger.info(f"No existing output file found at {OUTPUT_PATH}. A new file will be created.")
+
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+
+    df = None
+    titles_existing, pmids_existing = set(), set()
+    if os.path.exists(OUTPUT_PATH):
+        df = pd.read_csv(OUTPUT_PATH)
+        titles_existing = set(df["paper_title"].dropna().tolist())
+        pmids_existing = set(df["pmid"].dropna().astype(str))
+        logger.info(f"Found {len(pmids_existing)} existing PMIDs in output file. These will be skipped in the new extraction.")
 
     ids = search_pubmed(PUBMED_QUERY, MAX_PAPERS)
     if not ids:
         logger.warning("No articles found.")
         return
     
-    if len(ids) < MAX_PAPERS:
-        logger.info(f"Only found {len(ids)} ids, less than the requested {MAX_PAPERS}.")
+    logger.info(f"Found {len(ids)} articles from PubMed search.")
+    
+    if IDS_TO_KEEP:
+        ids = [id for id in ids if id in IDS_TO_KEEP]
+        logger.info(f"Filtered to {len(ids)} articles based on IDS_TO_KEEP list.")
+    
+    if pmids_existing:
+        ids = [id for id in ids if id not in pmids_existing]
+        logger.info(f"After filtering out existing PMIDs, {len(ids)} new articles remain for extraction.")
+    
+    logger.info(f"{len(ids)} articles will be processed for dataset extraction.")
 
     articles = fetch_pubmed_details(ids)
     citation_counts_by_pmid = fetch_pubmed_citation_counts(ids)
@@ -487,9 +493,6 @@ async def main():
     if not articles:
         logger.warning("No articles found.")
         return
-    
-    if len(articles) < MAX_PAPERS:
-        logger.info(f"Only found {len(articles)} articles, less than the requested {MAX_PAPERS}.")
 
     extracted_datasets: List[RadiologyDataset] = []
     for article in tqdm(articles):
@@ -497,15 +500,39 @@ async def main():
         title = publication_metadata.get("title")
         abstract = publication_metadata.get("abstract")
 
-        dataset = await extract_with_agent(title, abstract, publication_metadata)
+        if title and title in titles_existing:
+            logger.debug(f"Article title already exists in output, skipping: {title}")
+            continue
+
+        dataset = None
+        for _ in range(NUM_TRIES_AGENT):
+            dataset = await extract_with_agent(title, abstract, publication_metadata)
+            if dataset is not None:
+                break
+        
         if isinstance(dataset, RadiologyDataset):
             extracted_datasets.append(dataset)
+        else:
+            logger.debug(f"Extraction failed for article: {title}")
 
         await asyncio.sleep(1)  # rate limit
 
-    with open(OUTPUT_PATH, "w") as f:
-        for dataset in extracted_datasets:
-            f.write(serialize_dataset_output(dataset) + "\n")
+    # Convert extracted datasets → dict rows
+    rows = [d.model_dump() for d in extracted_datasets]
+    new_df = pd.DataFrame(rows)
+    
+    # convert list fields to comma-separated strings for CSV output
+    for col in new_df.columns:
+        if not new_df[col].empty and isinstance(new_df[col].iloc[0], list):
+            new_df[col] = new_df[col].apply(lambda x: ",".join(x) if isinstance(x, list) else x)
+
+    if df is None or df.empty:
+        df = new_df
+    else:
+        df = pd.concat([df, new_df], ignore_index=True)
+
+    # Save to CSV
+    df.to_csv(OUTPUT_PATH, index=False)
 
     logger.info(f"Extraction complete. Results saved to {OUTPUT_PATH}")
 

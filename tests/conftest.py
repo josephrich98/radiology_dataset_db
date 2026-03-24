@@ -162,6 +162,7 @@ def _paper_ground_truth():
             ),
             "link": "https://doi.org/10.1148/ryai.210315",
             "date": "27-July-2022",
+            "pmid": "36204533",
             "expected": {
                 "name": "RadImageNet",
                 "num_images": 1350000,
@@ -191,6 +192,7 @@ def _paper_ground_truth():
             ),
             "link": "https://doi.org/10.1038/s41597-019-0322-0",
             "date": "12-December-2019",
+            "pmid": "31831740",
             "expected": {
                 "name": "MIMIC-CXR",
                 "num_images": 377110,
@@ -215,6 +217,7 @@ def _paper_ground_truth():
             ),
             "link": "https://doi.org/10.1038/s41467-020-15948-9",
             "date": "26-May-2020",
+            "pmid": "32457287",
             "expected": {
                 "name": "UK Biobank",
                 "num_images": None,
@@ -245,6 +248,7 @@ def _paper_ground_truth():
             ),
             "link": "https://doi.org/10.1007/s10278-013-9622-7",
             "date": "01-December-2013",  # "25-July-2013",
+            "pmid": "23884657",
             "expected": {
                 "name": "The Cancer Imaging Archive (TCIA)",
                 "num_images": 3300000,
@@ -275,6 +279,7 @@ def _paper_ground_truth():
             ),
             "link": "https://doi.org/10.1038/s41586-026-10181-8",
             "date": "04-March-2026",
+            "pmid": "41781626",
             "expected": {
                 "name": "Merlin",
                 "num_images": None,
