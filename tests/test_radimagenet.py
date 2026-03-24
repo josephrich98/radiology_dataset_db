@@ -120,6 +120,7 @@ def test_serialize_dataset_output_produces_valid_pretty_json(monkeypatch):
     title, abstract, link = module.get_radimagenet_seed_text()
     dataset = module.RadiologyDataset(
         name="RadImageNet database",
+        num_appearances=3,
         num_patients=131872,
         modalities=[module.Modality.CT, module.Modality.MRI, module.Modality.US],
         paper_title=title,
@@ -131,7 +132,32 @@ def test_serialize_dataset_output_produces_valid_pretty_json(monkeypatch):
     parsed = json.loads(output)
 
     assert parsed["name"] == "RadImageNet database"
+    assert parsed["num_appearances"] == 3
     assert parsed["paper_link"] == "https://doi.org/10.1148/ryai.210315"
     assert parsed["modalities"] == ["CT", "MRI", "US"]
     assert output.startswith("{\n")
     assert "\n    \"name\": \"RadImageNet database\"" in output
+
+
+def test_annotate_and_filter_by_min_appearances_with_name_normalization(monkeypatch):
+    module = load_build_module(monkeypatch)
+
+    datasets = [
+        module.RadiologyDataset(name="RadImageNet database"),
+        module.RadiologyDataset(name="rad imagenet"),
+        module.RadiologyDataset(name="RAD-IMAGENET"),
+        module.RadiologyDataset(name="LUNA16"),
+        module.RadiologyDataset(name=None),
+    ]
+
+    annotated = module.annotate_appearance_counts(datasets)
+
+    assert annotated[0].num_appearances == 3
+    assert annotated[1].num_appearances == 3
+    assert annotated[2].num_appearances == 3
+    assert annotated[3].num_appearances == 1
+    assert annotated[4].num_appearances is None
+
+    filtered = module.filter_by_min_appearances(annotated, min_appearances=2)
+    filtered_names = [d.name for d in filtered]
+    assert filtered_names == ["RadImageNet database", "rad imagenet", "RAD-IMAGENET"]

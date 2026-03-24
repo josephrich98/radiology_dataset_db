@@ -3,9 +3,11 @@
 import os
 import time
 import asyncio
+import re
 from enum import Enum
 from typing import List, Optional, Union
 from dataclasses import dataclass
+from collections import Counter
 from dotenv import load_dotenv
 
 from tqdm import tqdm
@@ -19,22 +21,69 @@ load_dotenv()
 # CONFIG
 # -----------------------------
 OUTPUT_PATH = "data/datasets.json"
-MODEL = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")  # openai:gpt-5-3-instant
-MAX_PAPERS = 1
+MODEL = "openai:Qwen/Qwen2.5-7B-Instruct"  # openai:gpt-5-3-instant
+MAX_PAPERS = 9999  # 1-10_000 - for debugging
+MIN_APPEARANCES = 3  # minimum number of times a dataset must be mentioned across papers to be included in the final output. Set to >1 to filter out one-off mentions and focus on more widely used datasets. Set to 1 or less to include all extracted datasets regardless of frequency.
 
 QUERY = """
 (radiology dataset OR medical imaging dataset) AND (CT OR MRI OR X-ray)
 """
 
-INSTRUCTIONS = """You extract structured information about radiology datasets from papers. 
-Only extract information explicitly stated or strongly implied. 
-If a field is unknown, leave it null or empty. 
-Dataset name rules:
-- If a named dataset is referenced (e.g., 'RadImageNet database'), extract that name.
-- Dataset names often appear in the title or as capitalized named resources.
-- If a dataset shares the same name as a model (e.g., RadImageNet), still extract it.
-"""
+INSTRUCTIONS=(
+    "You extract structured information about radiology datasets from papers.\n\n"
 
+    # "First determine:\n"  #$ try to filter out non-dataset papers by asking the LLM to classify whether the paper is likely introducing a new dataset or just using an existing dataset. This can help reduce false positives where the LLM hallucinates a dataset name that isn't actually the focus of the paper.
+    # "- Is this paper introducing a NEW dataset? (is_dataset_paper = true)\n"
+    # "- Or is it USING an existing dataset? (is_dataset_paper = false)\n\n"
+
+    # "A dataset paper typically:\n"
+    # "- introduces a named dataset\n"
+    # "- describes how the data was collected\n"
+    # "- reports dataset size (patients/images)\n"
+    # "- uses phrases like 'we constructed', 'we collected', 'we present'\n\n"
+
+    # "A non-dataset paper typically:\n"
+    # "- uses datasets like MIMIC, CheXpert, TCGA\n"
+    # "- focuses on model performance or methods\n\n"
+
+    # "Only extract dataset fields if is_dataset_paper = true.\n"
+    # "Otherwise return empty/null fields.\n"
+
+    "Dataset name rules:\n"
+    "- If a named dataset is referenced (e.g., 'RadImageNet database'), extract that name.\n"
+    "- Dataset names often appear in the title or as capitalized named resources.\n"
+    "- If a dataset shares the same name as a model (e.g., RadImageNet), still extract it.\n\n"
+)
+
+### END CONFIG ###
+
+DATASET_KEYWORDS = [
+    "we constructed",
+    "we collected",
+    "we curated",
+    "we assembled",
+    "we present a dataset",
+    "this dataset consists of",
+    "we introduce",
+    "we release",
+]
+
+USAGE_KEYWORDS = [
+    "we used the",
+    "we evaluated on",
+    "trained on",
+    "validated on",
+]
+
+def is_dataset_paper_rule_based(text: str):
+    text = text.lower()
+
+    if any(k in text for k in DATASET_KEYWORDS):
+        return True
+    if any(k in text for k in USAGE_KEYWORDS):
+        return False
+
+    return None  # let LLM decide
 
 def getenv(key: str) -> str:
     value = os.getenv(key)
@@ -79,6 +128,7 @@ class AdditionalData(str, Enum):
 
 class RadiologyDataset(BaseModel):
     name: Optional[str] = Field(default=None)
+    num_appearances: Optional[int] = None
     num_series: Optional[int] = None
     num_patients: Optional[int] = None
     modalities: List[Modality] = Field(default_factory=list)
@@ -133,12 +183,14 @@ Extract:
 # PUBMED SEARCH
 # -----------------------------
 def search_pubmed(query: str, max_results: int):
+    print("Searching PubMed...")
     handle = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
     record = Entrez.read(handle)
     return record["IdList"]
 
 
 def fetch_pubmed_details(id_list: List[str]):
+    print("Fetching article details from PubMed...")
     handle = Entrez.efetch(db="pubmed", id=",".join(id_list), retmode="xml")
     records = Entrez.read(handle)
     return records["PubmedArticle"]
@@ -175,6 +227,40 @@ def serialize_dataset_output(dataset: Union[RadiologyDataset, str]) -> str:
     return str(dataset)
 
 
+def normalize_dataset_name(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+
+    normalized = name.casefold()
+    normalized = re.sub(r"\bdatabase\b", "", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+    normalized = re.sub(r"[^a-z0-9]", "", normalized)
+    return normalized or None
+
+
+def annotate_appearance_counts(datasets: List[RadiologyDataset]) -> List[RadiologyDataset]:
+    normalized_names = [normalize_dataset_name(dataset.name) for dataset in datasets]
+    counts = Counter(name for name in normalized_names if name is not None)
+
+    for dataset, normalized_name in zip(datasets, normalized_names):
+        dataset.num_appearances = counts.get(normalized_name) if normalized_name is not None else None
+
+    return datasets
+
+
+def filter_by_min_appearances(
+    datasets: List[RadiologyDataset], min_appearances: int
+) -> List[RadiologyDataset]:
+    if min_appearances <= 1:
+        return datasets
+
+    return [
+        dataset
+        for dataset in datasets
+        if (dataset.num_appearances or 0) >= min_appearances
+    ]
+
+
 # -----------------------------
 # LLM EXTRACTION (ASYNC)
 # -----------------------------
@@ -191,6 +277,10 @@ async def extract_with_agent(title: str, abstract: str, link: Optional[str]):
             output.paper_title = title
             output.paper_abstract = abstract
             output.paper_link = link
+
+            if output.name and output.name.lower() not in output.paper_title.lower():  #$ try to filter out non-dataset papers by checking if the extracted dataset name appears in the paper title. Not perfect but can help catch some false positives where the LLM hallucinates a dataset name that isn't actually the focus of the paper.
+                return None
+
         return output
 
     except Exception as e:
@@ -205,6 +295,13 @@ async def main():
     os.makedirs("data", exist_ok=True)
 
     ids = search_pubmed(QUERY, MAX_PAPERS)
+    if not ids:
+        print("No articles found.")
+        return
+    
+    if len(ids) < MAX_PAPERS:
+        print(f"Only found {len(ids)} ids, less than the requested {MAX_PAPERS}.")
+
     articles = fetch_pubmed_details(ids)
 
     if not articles:
@@ -214,20 +311,30 @@ async def main():
     if len(articles) < MAX_PAPERS:
         print(f"Only found {len(articles)} articles, less than the requested {MAX_PAPERS}.")
 
+    extracted_datasets: List[RadiologyDataset] = []
+    for article in tqdm(articles):
+        title, abstract, link = extract_text(article)
+        # title, abstract, link = get_radimagenet_seed_text()
+
+        if not abstract:
+            continue
+
+        is_dataset_paper = is_dataset_paper_rule_based(title + " " + abstract)  #$ try to filter out non-dataset papers with simple rules before calling LLM
+        if is_dataset_paper is False:
+            continue  # skip papers that are likely not introducing a dataset
+
+        dataset = await extract_with_agent(title, abstract, link)
+        if isinstance(dataset, RadiologyDataset):
+            extracted_datasets.append(dataset)
+
+        await asyncio.sleep(1)  # rate limit
+
+    extracted_datasets = annotate_appearance_counts(extracted_datasets)
+    extracted_datasets = filter_by_min_appearances(extracted_datasets, MIN_APPEARANCES)
+
     with open(OUTPUT_PATH, "w") as f:
-        for article in tqdm(articles):
-            title, abstract, link = extract_text(article)
-            # title, abstract, link = get_radimagenet_seed_text()
-
-            if not abstract:
-                continue
-
-            dataset = await extract_with_agent(title, abstract, link)
-
-            if dataset:
-                f.write(serialize_dataset_output(dataset) + "\n")
-
-            await asyncio.sleep(1)  # rate limit
+        for dataset in extracted_datasets:
+            f.write(serialize_dataset_output(dataset) + "\n")
 
     print(f"Extraction complete. Results saved to {OUTPUT_PATH}")
 
