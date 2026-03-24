@@ -2,26 +2,37 @@
 
 import os
 import time
-from tqdm import tqdm
 import asyncio
-from typing import List, Optional
+from enum import Enum
+from typing import List, Optional, Union
 from dataclasses import dataclass
+from dotenv import load_dotenv
 
 from tqdm import tqdm
 from pydantic import BaseModel, Field
 from Bio import Entrez
 from pydantic_ai import Agent, RunContext
 
+load_dotenv()
 
 # -----------------------------
 # CONFIG
 # -----------------------------
 OUTPUT_PATH = "data/datasets.json"
-MODEL = os.getenv("MODEL", "ollama:qwen2.5")  # openai:gpt-5-3-instant
-MAX_PAPERS = 3
+MODEL = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")  # openai:gpt-5-3-instant
+MAX_PAPERS = 1
 
 QUERY = """
 (radiology dataset OR medical imaging dataset) AND (CT OR MRI OR X-ray)
+"""
+
+INSTRUCTIONS = """You extract structured information about radiology datasets from papers. 
+Only extract information explicitly stated or strongly implied. 
+If a field is unknown, leave it null or empty. 
+Dataset name rules:
+- If a named dataset is referenced (e.g., 'RadImageNet database'), extract that name.
+- Dataset names often appear in the title or as capitalized named resources.
+- If a dataset shares the same name as a model (e.g., RadImageNet), still extract it.
 """
 
 
@@ -34,18 +45,48 @@ def getenv(key: str) -> str:
 
 Entrez.email = getenv("ENTREZ_EMAIL")
 
+RADIMAGENET_TITLE = "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"
+RADIMAGENET_ABSTRACT = "Purpose: To demonstrate the value of pretraining with millions of radiologic images compared with ImageNet photographic images on downstream medical applications when using transfer learning. Materials and methods: This retrospective study included patients who underwent a radiologic study between 2005 and 2020 at an outpatient imaging facility. Key images and associated labels from the studies were retrospectively extracted from the original study interpretation. These images were used for RadImageNet model training with random weight initiation. The RadImageNet models were compared with ImageNet models using the area under the receiver operating characteristic curve (AUC) for eight classification tasks and using Dice scores for two segmentation problems. Results: The RadImageNet database consists of 1.35 million annotated medical images in 131 872 patients who underwent CT, MRI, and US for musculoskeletal, neurologic, oncologic, gastrointestinal, endocrine, abdominal, and pulmonary pathologic conditions. For transfer learning tasks on small datasets-thyroid nodules (US), breast masses (US), anterior cruciate ligament injuries (MRI), and meniscal tears (MRI)-the RadImageNet models demonstrated a significant advantage (P < .001) to ImageNet models (9.4%, 4.0%, 4.8%, and 4.5% AUC improvements, respectively). For larger datasets-pneumonia (chest radiography), COVID-19 (CT), SARS-CoV-2 (CT), and intracranial hemorrhage (CT)-the RadImageNet models also illustrated improved AUC (P < .001) by 1.9%, 6.1%, 1.7%, and 0.9%, respectively. Additionally, lesion localizations of the RadImageNet models were improved by 64.6% and 16.4% on thyroid and breast US datasets, respectively. Conclusion: RadImageNet pretrained models demonstrated better interpretability compared with ImageNet models, especially for smaller radiologic datasets.Keywords: CT, MR Imaging, US, Head/Neck, Thorax, Brain/Brain Stem, Evidence-based Medicine, Computer Applications-General (Informatics) Supplemental material is available for this article. Published under a CC BY 4.0 license.See also the commentary by Cadrin-Chênevert in this issue."
+RADIMAGENET_LINK = "https://doi.org/10.1148/ryai.210315"
+
+def get_radimagenet_seed_text():
+    return RADIMAGENET_TITLE, RADIMAGENET_ABSTRACT, RADIMAGENET_LINK
+
 # -----------------------------
 # SCHEMA
 # -----------------------------
+class Modality(str, Enum):
+    CT = "CT"
+    MRI = "MRI"
+    XRAY = "X-ray"
+    US = "US"
+    PET = "PET"
+
+class BodyRegion(str, Enum):
+    BRAIN = "brain"
+    CHEST = "chest"
+    ABDOMEN = "abdomen"
+    PELVIS = "pelvis"
+    LIMBS = "limbs"
+
+class AdditionalData(str, Enum):
+    REPORTS = "reports"
+    CAPTIONS = "captions"
+    SEGMENTATION = "segmentation"
+    GENOMICS = "genomics"
+    HISTOLOGY = "histology"
+    VQA = "VQA"
+
 class RadiologyDataset(BaseModel):
     name: Optional[str] = Field(default=None)
-    num_patients: Optional[int] = None
     num_series: Optional[int] = None
-    num_images: Optional[int] = None
-    modalities: List[str] = Field(default_factory=list)
-    body_regions: List[str] = Field(default_factory=list)
-    additional_data: List[str] = Field(default_factory=list)
-    link: Optional[str] = None
+    num_patients: Optional[int] = None
+    modalities: List[Modality] = Field(default_factory=list)
+    body_regions: List[BodyRegion] = Field(default_factory=list)
+    additional_data: List[AdditionalData] = Field(default_factory=list)
+    paper_title: Optional[str] = None
+    paper_abstract: Optional[str] = None
+    paper_link: Optional[str] = None
 
 
 # -----------------------------
@@ -64,12 +105,10 @@ class ExtractionDeps:
 dataset_agent = Agent(
     MODEL,
     deps_type=ExtractionDeps,
-    output_type=RadiologyDataset,
-    instructions=(
-        "You extract structured information about radiology datasets from papers. "
-        "Only extract information explicitly stated or strongly implied. "
-        "If a field is unknown, leave it null or empty."
-    ),
+    output_type=RadiologyDataset,  #* change to str if running into bugs
+    instructions=INSTRUCTIONS,
+    # tools=[],
+    # toolsets=[]
 )
 
 
@@ -84,9 +123,8 @@ Extract:
 - dataset name
 - number of patients
 - number of imaging series
-- number of images
-- imaging modalities (CT, MRI, X-ray, etc)
-- body regions (brain, chest, abdomen, etc)
+- imaging modalities: CT, MRI, X-ray, US, PET
+- body regions: brain, chest, abdomen, pelvis, limbs
 - additional data (reports, captions, segmentation, genomics, VQA, etc)
 """
 
@@ -131,6 +169,12 @@ def extract_text(article):
     return title, abstract, link
 
 
+def serialize_dataset_output(dataset: Union[RadiologyDataset, str]) -> str:
+    if isinstance(dataset, RadiologyDataset):
+        return dataset.model_dump_json(indent=4)
+    return str(dataset)
+
+
 # -----------------------------
 # LLM EXTRACTION (ASYNC)
 # -----------------------------
@@ -143,7 +187,10 @@ async def extract_with_agent(title: str, abstract: str, link: Optional[str]):
         )
 
         output = result.output
-        output.link = link
+        if isinstance(output, RadiologyDataset):
+            output.paper_title = title
+            output.paper_abstract = abstract
+            output.paper_link = link
         return output
 
     except Exception as e:
@@ -160,9 +207,17 @@ async def main():
     ids = search_pubmed(QUERY, MAX_PAPERS)
     articles = fetch_pubmed_details(ids)
 
+    if not articles:
+        print("No articles found.")
+        return
+    
+    if len(articles) < MAX_PAPERS:
+        print(f"Only found {len(articles)} articles, less than the requested {MAX_PAPERS}.")
+
     with open(OUTPUT_PATH, "w") as f:
         for article in tqdm(articles):
             title, abstract, link = extract_text(article)
+            # title, abstract, link = get_radimagenet_seed_text()
 
             if not abstract:
                 continue
@@ -170,9 +225,11 @@ async def main():
             dataset = await extract_with_agent(title, abstract, link)
 
             if dataset:
-                f.write(dataset.model_dump_json() + "\n")
+                f.write(serialize_dataset_output(dataset) + "\n")
 
             await asyncio.sleep(1)  # rate limit
+
+    print(f"Extraction complete. Results saved to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
