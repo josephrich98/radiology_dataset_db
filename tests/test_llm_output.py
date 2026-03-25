@@ -70,6 +70,9 @@ def test_serialize_dataset_against_ground_truth(monkeypatch, paper_key):
     papers = _paper_ground_truth()
     paper = papers[paper_key]
 
+    if paper.get("expected") is None:
+        pytest.skip(f"No expected output defined for {paper_key}")
+
     dataset = _build_dataset_from_truth(module, paper)
     _assert_serialized_dataset(module, dataset, paper)
 

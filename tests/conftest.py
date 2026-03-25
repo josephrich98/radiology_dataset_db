@@ -291,6 +291,60 @@ def _paper_ground_truth():
             },
             "name_aliases": ["merlin"],
         },
+        "radgenome_chest_ct": {
+            "title": "Development of a large-scale grounded vision language dataset for chest CT analysis",
+            "abstract": (
+                "Developing generalist foundation model has recently attracted tremendous attention in the field of AI for Medicine, which requires open-source medical image datasets that incorporate diverse supervision signals across various imaging modalities. In this paper, we introduce RadGenome-Chest CT, a comprehensive, large-scale, region-guided 3D chest CT interpretation dataset based on CT-RATE. Specifically, we leverage the latest powerful universal segmentation model and large language models, to extend the original datasets from the following aspects: organ-level segmentation masks covering 197 categories, which provide intermediate reasoning visual clues for interpretation; 665K multigranularity grounded reports, where each sentence of the report is linked to the corresponding anatomical region of CT volume with a segmentation mask; 1.2M grounded VQA pairs, where questions and answers are all linked with reference segmentation masks, enabling models to associate visual evidence with textual explanations. We believe that RadGenome-Chest CT can significantly advance the development of multimodal medical foundation models, by training to generate texts based on given segmentation regions, which is unattainable with previous relevant datasets."
+            ),
+            "link": "https://doi.org/10.1038/s41597-025-05922-9",
+            "date": "2025",
+            "pmid": "41073455",
+        },
+        "ct-rate": {
+            "title": "Generalist foundation models from a multimodal dataset for 3D computed tomography",
+            "abstract": (
+                "Advancements in medical imaging AI, particularly in 3D imaging, have been limited due to the scarcity of comprehensive datasets. We introduce CT-RATE, a public dataset that pairs 3D medical images with corresponding textual reports. CT-RATE comprises 25,692 non-contrast 3D chest CT scans from 21,304 unique patients. Each scan is accompanied by its corresponding radiology report. Leveraging CT-RATE, we develop CT-CLIP, a CT-focused contrastive language-image pretraining framework designed for broad applications without the need for task-specific training. We demonstrate how CT-CLIP can be used in multi-abnormality detection and case retrieval, and outperforms state-of-the-art fully supervised models across all key metrics. By combining CT-CLIP's vision encoder with a pretrained large language model, we create CT-CHAT, a vision-language foundational chat model for 3D chest CT volumes. Fine-tuned on over 2.7 million question-answer pairs derived from the CT-RATE dataset, CT-CHAT underscores the necessity for specialized methods in 3D medical imaging. Collectively, the open-source release of CT-RATE, CT-CLIP and CT-CHAT not only addresses critical challenges in 3D medical imaging but also lays the groundwork for future innovations in medical AI and improved patient care."
+            ),
+            "link": "https://doi.org/10.1038/s41551-025-01599-y",
+            "date": "2025",
+            "pmid": "41680439",
+        },
+        "roco": {
+            "title": "ROCOv2: Radiology Objects in COntext Version 2, an Updated Multimodal Image Dataset",
+            "abstract": (
+                "Automated medical image analysis systems often require large amounts of training data with high quality labels, which are difficult and time consuming to generate. This paper introduces Radiology Object in COntext version 2 (ROCOv2), a multimodal dataset consisting of radiological images and associated medical concepts and captions extracted from the PMC Open Access subset. It is an updated version of the ROCO dataset published in 2018, and adds 35,705 new images added to PMC since 2018. It further provides manually curated concepts for imaging modalities with additional anatomical and directional concepts for X-rays. The dataset consists of 79,789 images and has been used, with minor modifications, in the concept detection and caption prediction tasks of ImageCLEFmedical Caption 2023. The dataset is suitable for training image annotation models based on image-caption pairs, or for multi-label image classification using Unified Medical Language System (UMLS) concepts provided with each image. In addition, it can serve for pre-training of medical domain models, and evaluation of deep learning models for multi-task learning."
+            ),
+            "link": "https://doi.org/10.1038/s41597-024-03496-6",
+            "date": "2018",
+            "pmid": "38926396",
+        },
+        "medmnist_v2": {
+            "title": "MedMNIST v2: A large-scale lightweight benchmark for 2D and 3D biomedical image classification",
+            "abstract": (
+                "We introduce MedMNIST v2, a large-scale MNIST-like dataset collection of standardized biomedical images, including 12 datasets for 2D and 6 datasets for 3D. All images are pre-processed into a small size of 28 × 28 (2D) or 28 × 28 × 28 (3D) with the corresponding classification labels so that no background knowledge is required for users. Covering primary data modalities in biomedical images, MedMNIST v2 is designed to perform classification on lightweight 2D and 3D images with various dataset scales (from 100 to 100,000) and diverse tasks (binary/multi-class, ordinal regression, and multi-label). The resulting dataset, consisting of 708,069 2D images and 9,998 3D images in total, could support numerous research/educational purposes in biomedical image analysis, computer vision, and machine learning. We benchmark several baseline methods on MedMNIST v2, including 2D/3D neural networks and opensource/commercial AutoML tools. The data and code are publicly available at https://medmnist.com/."
+            ),
+            "link": "https://doi.org/10.1038/s41597-022-01721-8",
+            "date": "2023",
+            "pmid": "36658144",
+        },
+        "kits19": {
+            "title": "The KiTS19 Challenge Data: 300 Kidney Tumor Cases with Clinical Context, CT Semantic Segmentations, and Surgical Outcomes",
+            "abstract": (
+                "Characterization of the relationship between a kidney tumor’s appearance on cross-sectional imaging and it’s treatment outcomes is a promising direction for informing treatement decisions and improving patient outcomes. Unfortunately, the rigorous study of tumor morphology is limited by the laborious and noisy process of making manual radiographic measurements. Semantic segmentation of the tumor and surrounding organ offers a precise quantitative description of that morphology, but it too requires significant manual effort. A large publicly available dataset of high-fidelity semantic segmentations along with clinical context and treatment outcomes could accelerate not only the study of how morphology relates to outcomes, but also the development of automatic semantic segmentation systems which could enable such studies on unprecedented scales. We present the KiTS19 challenge dataset: a collection of segmented CT imaging and treatment outcomes for 300 patients treated with partial or radical nephrectomy between 2010 and 2018. 210 of these cases have been released publicly and the remaining 90 remain private for the objective evaluation of prediction systems developed using the public cases."
+            ),
+            "link": "https://arxiv.org/abs/1904.00445",
+            "date": "2020",
+            "pmid": None,
+        },
+        "idc": {
+            "title": "National Cancer Institute Imaging Data Commons: Toward Transparency, Reproducibility, and Scalability in Imaging Artificial Intelligence",
+            "abstract": (
+                "The remarkable advances of artificial intelligence (AI) technology are revolutionizing established approaches to the acquisition, interpretation, and analysis of biomedical imaging data. Development, validation, and continuous refinement of AI tools requires easy access to large high-quality annotated datasets, which are both representative and diverse. The National Cancer Institute (NCI) Imaging Data Commons (IDC) hosts large and diverse publicly available cancer image data collections. By harmonizing all data based on industry standards and colocalizing it with analysis and exploration resources, the IDC aims to facilitate the development, validation, and clinical translation of AI tools and address the well-documented challenges of establishing reproducible and transparent AI processing pipelines. Balanced use of established commercial products with open-source solutions, interconnected by standard interfaces, provides value and performance, while preserving sufficient agility to address the evolving needs of the research community. Emphasis on the development of tools, use cases to demonstrate the utility of uniform data representation, and cloud-based analysis aim to ease adoption and help define best practices. Integration with other data in the broader NCI Cancer Research Data Commons infrastructure opens opportunities for multiomics studies incorporating imaging data to further empower the research community to accelerate breakthroughs in cancer detection, diagnosis, and treatment."
+            ),
+            "link": "https://doi.org/10.1148/rg.230180",
+            "date": "2023",
+            "pmid": "37999984",
+        }
     }
 
 

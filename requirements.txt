@@ -1,9 +1,0 @@
-biopython
-requests
-tqdm
-pydantic
-pydantic-ai
-openai
-transformers
-accelerate
-pandas

@@ -39,7 +39,8 @@ dependencies = [
     "openai",
     "transformers",
     "accelerate",
-    "pandas"
+    "pandas",
+    "matplotlib"
 ]
 
 [project.urls]
