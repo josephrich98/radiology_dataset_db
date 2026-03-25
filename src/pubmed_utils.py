@@ -3,7 +3,8 @@ import time
 import requests
 import re
 import logging
-from typing import Dict, List, Optional, Union
+import ast
+from typing import Dict, List, Optional, Set, Union
 
 from more_itertools import chunked
 from tqdm import tqdm
@@ -69,6 +70,72 @@ def drop_one_analysis(query):
         results.append((f"DROP RIGHT: {right_terms[i]}", count))
 
     return results
+
+
+def extract_mesh_terms_union(pubmed_query: str) -> Set[str]:
+    """
+    Return the union of all query terms ending in [MeSH].
+
+    Quoted phrases are kept intact as single terms with spaces preserved.
+    Example: '"Radiology Information Systems"[MeSH]' -> 'Radiology Information Systems'
+    """
+    mesh_terms: Set[str] = set()
+    mesh_pattern = re.compile(r'("([^"]+)"|[^\s()]+)\s*\[MeSH\]', re.IGNORECASE)
+
+    for full_match, quoted_term in mesh_pattern.findall(pubmed_query):
+        term = quoted_term if quoted_term else full_match
+        term = term.strip()
+        if term:
+            mesh_terms.add(term)
+
+    return mesh_terms
+
+
+def add_mesh_intersection_column(df, source_column: str, mesh_terms: Set[str], output_column: str):
+    """
+    From a comma-joined term column, write a new column containing the set
+    intersection with the provided MeSH terms.
+    """
+    mesh_lookup = {term.casefold(): term for term in mesh_terms}
+
+    def _intersect_terms(cell):
+        if not isinstance(cell, str):
+            return set()
+
+        cell_terms = {part.strip() for part in cell.split(",") if part.strip()}
+        matched = {
+            mesh_lookup[term.casefold()]
+            for term in cell_terms
+            if term.casefold() in mesh_lookup
+        }
+        return matched
+
+    df[output_column] = df[source_column].apply(_intersect_terms)
+    return df
+
+
+def add_column_to_isolate_mesh_terms_from_pubmed_matches(df, source_column="pubmed_matches", output_column="mesh_terms_in_pubmed_matches"):
+    def _flatten_terms(value):
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                yield from _flatten_terms(item)
+        elif isinstance(value, str):
+            yield value
+
+    def _extract_mesh_terms(cell):
+        parsed = cell
+        if isinstance(cell, str):
+            try:
+                parsed = ast.literal_eval(cell)
+            except Exception:
+                return []
+
+        terms = [term.strip() for term in _flatten_terms(parsed)]
+        ti_terms = [term for term in terms if term.endswith("[MeSH]")]
+        return ti_terms
+
+    df[output_column] = df[source_column].apply(_extract_mesh_terms)
+    return df
 
 
 # -----------------------------
@@ -162,7 +229,7 @@ def fetch_pubmed_citation_counts(pmids, batch_size=100):
 
     for batch in tqdm(list(chunked(pmids, batch_size)), desc="Fetching citation counts"):
         try:
-            response = requests.get(url, params={"pmids": ",".join(batch)})
+            response = requests.get(url, params={"pmids": ",".join(batch)}, timeout=10)
             
             if response.status_code != 200:
                 raise Exception(f"Status {response.status_code}")
@@ -403,14 +470,22 @@ def match_pubmed_query(query, title="", abstract="", mesh_terms=tuple()):
         for raw_term in or_terms:
             term_token = raw_term.strip()
             if len(term_token.split()) > 1 and ("'" not in term_token) and ('"' not in term_token):
-                raise ValueError(f"Term '{term_token}' has multiple words and contains quotes. Please add quotes around the entire term.")
+                raise ValueError(f"Term '{term_token}' has multiple words and does not contain quotes. Please add quotes around the entire term.")
             m = field_re.match(term_token)
             if not m:
                 raise ValueError(
                     f"Invalid term '{term_token}'. Each term must end with [MeSH], [ti], or [tiab]."
                 )
 
-            query_text = _normalize_term_text(m.group("term"))
+            term_text = m.group("term")
+            term_text_stripped = term_text.strip()
+            is_quoted_phrase = (
+                len(term_text_stripped) >= 2
+                and term_text_stripped[0] == '"'
+                and term_text_stripped[-1] == '"'
+            )
+
+            query_text = _normalize_term_text(term_text)
             if not query_text:
                 raise ValueError(f"Empty term before field suffix in '{term_token}'.")
 
@@ -421,9 +496,17 @@ def match_pubmed_query(query, title="", abstract="", mesh_terms=tuple()):
             if field == "MeSH":
                 is_match = needle in mesh_set
             elif field == "ti":
-                is_match = needle in title_tokens
+                if is_quoted_phrase:
+                    # Keep quoted phrases intact and match with spaces preserved.
+                    is_match = needle in title_l
+                else:
+                    is_match = needle in title_tokens
             elif field == "tiab":
-                is_match = needle in title_tokens or needle in abstract_tokens
+                if is_quoted_phrase:
+                    # Keep quoted phrases intact and match with spaces preserved.
+                    is_match = needle in title_l or needle in abstract_l
+                else:
+                    is_match = needle in title_tokens or needle in abstract_tokens
 
             if is_match:
                 matched_terms.append(term_token)
@@ -439,6 +522,16 @@ def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str,
     title = _extract_title(article)
     abstract = _extract_abstract(article)
     mesh_terms = _extract_mesh_terms(article)
+    pubmed_matches = None
+    if pubmed_query is not None:
+        try:
+            pubmed_matches = match_pubmed_query(pubmed_query, title=title, abstract=abstract, mesh_terms=mesh_terms)
+            # for i, pubmed_matches_list in enumerate(pubmed_matches):
+            #     if not pubmed_matches_list:
+            #         logger.error(f"Query section {i} had no matches for article with PMID {pmid}. This may indicate an issue with the query structure or the matching logic.")
+            #         pubmed_matches_list = None
+        except Exception as e:
+            logger.error(f"Error matching PubMed query for article with PMID {pmid}: {e}")
     
     pubmed_metadata = {
         "title": title,
@@ -450,19 +543,7 @@ def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str,
         "mesh_terms": mesh_terms,
         "pmid": pmid,
         "citation_count": citation_counts_by_pmid.get(pmid) if pmid else None,
+        "pubmed_matches": pubmed_matches,
     }
-
-    if pubmed_query is not None:
-        try:
-            pubmed_matches = match_pubmed_query(pubmed_query, title=title, abstract=abstract, mesh_terms=mesh_terms)
-            for i, pubmed_matches_list in enumerate(pubmed_matches):
-                if not pubmed_matches_list:
-                    logger.error(f"Query section {i} had no matches for article with PMID {pmid}. This may indicate an issue with the query structure or the matching logic.")
-                    pubmed_matches_list = None
-                pubmed_metadata[f"pubmed_matches_{i}"] = pubmed_matches_list
-        except Exception as e:
-            logger.error(f"Error matching PubMed query for article with PMID {pmid}: {e}")
-            for i in range(len(pubmed_query.split("AND"))):
-                pubmed_metadata[f"pubmed_matches_{i}"] = None
 
     return pubmed_metadata

@@ -25,7 +25,7 @@ from pydantic_ai import Agent, RunContext
 
 from src.config import CONFIG, MODEL, IDS_TO_KEEP, PUBMED_QUERY, EXTRACTION_INSTRUCTIONS, EXTRACTION_AGENT_INSTRUCTIONS, ADD_TEXT_EXTRACT
 from src.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
-from src.pubmed_utils import extract_pubmed_metadata, search_pubmed, fetch_pubmed_details, fetch_pubmed_citation_counts
+from src.pubmed_utils import extract_pubmed_metadata, search_pubmed, fetch_pubmed_details, fetch_pubmed_citation_counts, add_column_to_isolate_mesh_terms_from_pubmed_matches
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  #* DEBUG, INFO
@@ -104,6 +104,9 @@ class RadiologyDataset(BaseModel):
     paper_journal: Optional[str] = None
     pmid: Optional[str] = None
     paper_citation_count: Optional[int] = None
+    mesh_terms: List[str] = Field(default_factory=list)
+    pubmed_matches: Optional[List[List[str]]] = None
+
 
 
 # -----------------------------
@@ -227,6 +230,8 @@ async def extract_with_agent(
             output.paper_journal = publication_metadata.get("journal")
             output.pmid = publication_metadata.get("pmid")
             output.paper_citation_count = publication_metadata.get("citation_count")
+            output.mesh_terms = publication_metadata.get("mesh_terms")
+            output.pubmed_matches = publication_metadata.get("pubmed_matches")
 
             if not output.name:
                 #* 2. No dataset name extracted → reject (this is a strong signal that the paper is not actually about a dataset, since the name is usually the easiest thing to extract and often appears in the title)
@@ -264,8 +269,10 @@ async def main():
                 logger.info("Exiting without overwriting. Please set overwrite=False to append to the existing file, or move/rename it before running the extraction.")
                 return
             os.remove(CONFIG.output_path)
+            os.remove(CONFIG.output_path_failed) if CONFIG.output_path_failed and os.path.exists(CONFIG.output_path_failed) else None
         else:
             logger.info(f"Output file {CONFIG.output_path} already exists. Set overwrite=True to overwrite it, or move/rename it before running the extraction. This will append to it but not replace existing lines, so you may get duplicates if you run multiple times without changing the output path.")
+            return
     else:
         logger.info(f"No existing output file found at {CONFIG.output_path}. A new file will be created.")
 
@@ -302,14 +309,13 @@ async def main():
         ids = [id for id in ids if id not in pmids_existing]
         logger.info(f"After filtering out existing PMIDs, {len(ids)} new articles remain for extraction.")
     
-    logger.info(f"{len(ids)} articles will be processed for dataset extraction.")
-
-    articles = fetch_pubmed_details(ids)
     citation_counts_by_pmid = fetch_pubmed_citation_counts(ids)
-
     if CONFIG.min_citations > 0:
         ids = [id for id in ids if citation_counts_by_pmid.get(id, 0) >= CONFIG.min_citations]
         logger.info(f"After filtering out articles with fewer than {CONFIG.min_citations} citations, {len(ids)} articles remain.")
+    
+    logger.info(f"{len(ids)} articles will be processed for dataset extraction.")
+    articles = fetch_pubmed_details(ids)
 
     if not articles:
         logger.warning("No articles found.")
@@ -318,7 +324,7 @@ async def main():
     extracted_datasets: List[RadiologyDataset] = []
     failed_metadata = []
     for article in tqdm(articles):
-        publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid)
+        publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
         title = publication_metadata.get("title")
         abstract = publication_metadata.get("abstract")
 
@@ -346,12 +352,17 @@ async def main():
 
     logger.info(f"Extracted {len(new_df)} datasets from {len(articles)} articles.")
     logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
+
+    # add column to isolate mesh terms in pubmed query
+    if "pubmed_matches" in new_df.columns:
+        new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
     
     # convert list fields to comma-separated strings for CSV output
+    cols_to_skip_joining = {"pubmed_matches"}
     for col in new_df.columns:
-        if not new_df[col].empty and isinstance(new_df[col].iloc[0], list):
+        if not new_df[col].empty and isinstance(new_df[col].iloc[0], list) and col not in cols_to_skip_joining:
             new_df[col] = new_df[col].apply(lambda x: ",".join(x) if isinstance(x, list) else x)
-
+    
     if df is None or df.empty:
         df = new_df
     else:
@@ -361,9 +372,12 @@ async def main():
     df.to_csv(CONFIG.output_path, index=False)
 
     if CONFIG.output_path_failed:
-        df_failed = pd.DataFrame(failed_metadata)
-        df_failed.to_csv(CONFIG.output_path_failed, index=False)
-        logger.info(f"Failed extraction metadata saved to {CONFIG.output_path_failed}")
+        if len(failed_metadata) == 0:
+            logger.info("No failed extractions to save.")
+        else:
+            df_failed = pd.DataFrame(failed_metadata)
+            df_failed.to_csv(CONFIG.output_path_failed, index=False)
+            logger.info(f"Failed extraction metadata saved to {CONFIG.output_path_failed}")
 
     logger.info(f"Extraction complete. Results saved to {CONFIG.output_path}")
 

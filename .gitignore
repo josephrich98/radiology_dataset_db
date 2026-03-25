@@ -148,6 +148,10 @@ dmypy.json
 # log files
 logs/
 
+# databases besides main
+data/*
+!data/radiology_db.csv
+
 # Scratch directories
 trash
 trash/
