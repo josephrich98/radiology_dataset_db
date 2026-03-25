@@ -151,14 +151,14 @@ logs/
 # Scratch directories
 trash
 trash/
-data
-data/
 runs
 runs/
 output
 output/
 outputs
 outputs/
+notebook/output
+notebook/output/
 models
 models/
 tmp.*

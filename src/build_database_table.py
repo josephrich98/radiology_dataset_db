@@ -53,7 +53,7 @@ def parse_args():
 
 def apply_overrides(args):
     for key, value in vars(args).items():
-        if value is not None:
+        if value is not None and hasattr(CONFIG, key) and getattr(CONFIG, key) != value:
             logger.info(f"Overriding config: {key} = {value}")
             setattr(CONFIG, key, value)
 
@@ -505,7 +505,8 @@ async def main():
     else:
         logger.info(f"No existing output file found at {CONFIG.output_path}. A new file will be created.")
 
-    os.makedirs(os.path.dirname(CONFIG.output_path), exist_ok=True)
+    if os.path.dirname(CONFIG.output_path):
+        os.makedirs(os.path.dirname(CONFIG.output_path), exist_ok=True)
 
     logger.info(f"Using model: {MODEL}")
 

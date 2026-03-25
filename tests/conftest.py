@@ -327,15 +327,15 @@ def _paper_ground_truth():
             "date": "2023",
             "pmid": "36658144",
         },
-        "kits19": {
-            "title": "The KiTS19 Challenge Data: 300 Kidney Tumor Cases with Clinical Context, CT Semantic Segmentations, and Surgical Outcomes",
-            "abstract": (
-                "Characterization of the relationship between a kidney tumor’s appearance on cross-sectional imaging and it’s treatment outcomes is a promising direction for informing treatement decisions and improving patient outcomes. Unfortunately, the rigorous study of tumor morphology is limited by the laborious and noisy process of making manual radiographic measurements. Semantic segmentation of the tumor and surrounding organ offers a precise quantitative description of that morphology, but it too requires significant manual effort. A large publicly available dataset of high-fidelity semantic segmentations along with clinical context and treatment outcomes could accelerate not only the study of how morphology relates to outcomes, but also the development of automatic semantic segmentation systems which could enable such studies on unprecedented scales. We present the KiTS19 challenge dataset: a collection of segmented CT imaging and treatment outcomes for 300 patients treated with partial or radical nephrectomy between 2010 and 2018. 210 of these cases have been released publicly and the remaining 90 remain private for the objective evaluation of prediction systems developed using the public cases."
-            ),
-            "link": "https://arxiv.org/abs/1904.00445",
-            "date": "2020",
-            "pmid": None,
-        },
+        # "kits19": {
+        #     "title": "The KiTS19 Challenge Data: 300 Kidney Tumor Cases with Clinical Context, CT Semantic Segmentations, and Surgical Outcomes",
+        #     "abstract": (
+        #         "Characterization of the relationship between a kidney tumor’s appearance on cross-sectional imaging and it’s treatment outcomes is a promising direction for informing treatement decisions and improving patient outcomes. Unfortunately, the rigorous study of tumor morphology is limited by the laborious and noisy process of making manual radiographic measurements. Semantic segmentation of the tumor and surrounding organ offers a precise quantitative description of that morphology, but it too requires significant manual effort. A large publicly available dataset of high-fidelity semantic segmentations along with clinical context and treatment outcomes could accelerate not only the study of how morphology relates to outcomes, but also the development of automatic semantic segmentation systems which could enable such studies on unprecedented scales. We present the KiTS19 challenge dataset: a collection of segmented CT imaging and treatment outcomes for 300 patients treated with partial or radical nephrectomy between 2010 and 2018. 210 of these cases have been released publicly and the remaining 90 remain private for the objective evaluation of prediction systems developed using the public cases."
+        #     ),
+        #     "link": "https://arxiv.org/abs/1904.00445",
+        #     "date": "2020",
+        #     "pmid": None,
+        # },
         "idc": {
             "title": "National Cancer Institute Imaging Data Commons: Toward Transparency, Reproducibility, and Scalability in Imaging Artificial Intelligence",
             "abstract": (

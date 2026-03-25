@@ -19,15 +19,20 @@ class Config:
 
 
 def get_model() -> str:
+    model = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")
     vllm_port = os.getenv("VLLM_PORT")
     if vllm_port is not None:
         vllm_port = int(vllm_port)
 
         result = subprocess.run(["curl", f"http://localhost:{vllm_port}/v1/models"], capture_output=True, text=True)
-        result = json.loads(result.stdout)
-        model_id = result["data"][0]["id"]
-        MODEL = f"openai:{model_id}"
-    return os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")
+        if result.returncode == 0:
+            result = json.loads(result.stdout)
+            model_id = result["data"][0]["id"]
+            model = f"openai:{model_id}"
+        else:
+            print("VLLM request failed - check if it is running and the port is correct.")
+            print("stderr:", result.stderr)
+    return model
 
 
 CONFIG = Config()
