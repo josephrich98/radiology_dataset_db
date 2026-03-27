@@ -383,6 +383,7 @@ def match_pubmed_query(query, title="", abstract="", mesh_terms=tuple()):
 
     Expected query structure:
       (<term1> OR <term2> OR ...) AND (<termA> OR <termB> OR ...) [AND ...]
+      with an optional trailing: NOT (<termX> OR <termY> OR ...)
 
     Each term must end with one of: [MeSH], [ti], [tiab].
 
@@ -442,6 +443,53 @@ def match_pubmed_query(query, title="", abstract="", mesh_terms=tuple()):
         parts.append(tail)
         return parts
 
+    def _strip_trailing_top_level_not_clause(expr: str) -> str:
+        """
+        Remove a trailing top-level NOT clause so matching is based only on the
+        positive (AND/OR) part of the query.
+        """
+        depth = 0
+        in_quote = False
+        i = 0
+        n = len(expr)
+        op = " NOT "
+        last_not_idx = None
+
+        while i < n:
+            ch = expr[i]
+            if ch == '"':
+                in_quote = not in_quote
+                i += 1
+                continue
+            if not in_quote:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth < 0:
+                        raise ValueError("Unbalanced parentheses in query.")
+                elif depth == 0 and expr.startswith(op, i):
+                    last_not_idx = i
+            i += 1
+
+        if depth != 0:
+            raise ValueError("Unbalanced parentheses in query.")
+        if in_quote:
+            raise ValueError("Unbalanced double quotes in query.")
+
+        if last_not_idx is None:
+            return expr.strip()
+
+        positive_part = expr[:last_not_idx].strip()
+        not_clause = expr[last_not_idx + len(op):].strip()
+        if not positive_part:
+            raise ValueError("Query cannot start with a top-level NOT clause.")
+        if not not_clause:
+            raise ValueError("Trailing top-level NOT clause is empty.")
+        if not (not_clause.startswith("(") and not_clause.endswith(")")):
+            raise ValueError("Trailing top-level NOT clause must be parenthesized.")
+        return positive_part
+
     def _strip_outer_parens(section: str) -> str:
         section = section.strip()
         if len(section) < 2 or section[0] != "(" or section[-1] != ")":
@@ -459,7 +507,8 @@ def match_pubmed_query(query, title="", abstract="", mesh_terms=tuple()):
     def tokenize(text: str):
         return re.findall(r"\b\w+\b", text.casefold())
 
-    and_sections = _split_top_level_boolean(query.strip(), "AND")
+    query_without_final_not = _strip_trailing_top_level_not_clause(query.strip())
+    and_sections = _split_top_level_boolean(query_without_final_not, "AND")
     if len(and_sections) < 1:
         raise ValueError("Query must contain at least one parenthesized OR section.")
 
