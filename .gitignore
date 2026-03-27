@@ -151,6 +151,8 @@ logs/
 # databases besides main
 data/*
 !data/radiology_db.csv
+!data/radiology_db_sample.csv
+!data/radiology_db_sample_small.csv
 
 # Scratch directories
 trash

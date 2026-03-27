@@ -174,7 +174,10 @@ async def main():
 
     # add column to isolate mesh terms in pubmed query
     if "pubmed_matches" in new_df.columns:
+        breakpoint()
         new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
+    
+    new_df["date_added"] = pd.Timestamp.now().isoformat()
     
     # convert list fields to comma-separated strings for CSV output
     cols_to_skip_joining = {"pubmed_matches"}
