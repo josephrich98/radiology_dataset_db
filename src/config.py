@@ -16,6 +16,7 @@ class Config:
     database_modality: str = "radiology"  # e.g. radiology, genomics, pathology, etc
     max_papers: Optional[int] = 9999  # None for all papers; set to small number for debugging
     min_citations: int = 25  # filter out papers with fewer than this many citations (set to 0 to disable)
+    citation_number_grace_period_years: int = 2  # allow extra grace period for recent papers to accumulate citations
     num_tries_agent: int = 5
     overwrite: bool = False
 

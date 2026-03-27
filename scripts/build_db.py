@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import math
 import os
 from typing import List
 
@@ -39,6 +40,7 @@ def parse_args():
     parser.add_argument("--output-path-failed", type=str)
     parser.add_argument("--max-papers", type=int)
     parser.add_argument("--min-citations", type=int)
+    parser.add_argument("--citation-number-grace-period-years", type=int)
     parser.add_argument("--num-tries-agent", type=int)
     parser.add_argument("--overwrite", action="store_true")
 
@@ -110,9 +112,16 @@ async def main():
         ids = [id for id in ids if id not in pmids_existing]
         logger.info(f"After filtering out existing PMIDs, {len(ids)} new articles remain for extraction.")
     
-    citation_counts_by_pmid = fetch_pubmed_citation_counts(ids)
+    get_year = CONFIG.citation_number_grace_period_years is not None and math.floor(CONFIG.citation_number_grace_period_years) > 0
+    if get_year:
+        citation_counts_by_pmid, year_results = fetch_pubmed_citation_counts(ids, get_year=True)
+    else:
+        citation_counts_by_pmid = fetch_pubmed_citation_counts(ids, get_year=False)
+        year_results = {}
+
     if CONFIG.min_citations > 0:
-        ids = [id for id in ids if citation_counts_by_pmid.get(id, 0) >= CONFIG.min_citations]
+        current_time = pd.Timestamp.now()
+        ids = [id for id in ids if citation_counts_by_pmid.get(id, 0) >= CONFIG.min_citations and year_results.get(id) is not None and year_results.get(id) <= (current_time - math.floor(CONFIG.citation_number_grace_period_years))]
         logger.info(f"After filtering out articles with fewer than {CONFIG.min_citations} citations, {len(ids)} articles remain.")
     
     logger.info(f"{len(ids)} articles will be processed for dataset extraction.")

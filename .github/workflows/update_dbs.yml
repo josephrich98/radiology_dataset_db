@@ -1,31 +1,32 @@
-# name: Weekly Build Radiology DB
+name: Weekly Build Radiology DB
 
-# on:
-#   schedule:
-#     - cron: "0 9 * * 1"   # every Monday at 09:00 UTC
-#   workflow_dispatch:      # allows manual trigger
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # every Monday at 09:00 UTC
+  workflow_dispatch:      # allows manual trigger
 
-# jobs:
-#   build:
-#     runs-on: ubuntu-latest
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-#     strategy:
-#       matrix:
-#         modality: ["radiology"]  #* add additional modalities here, e.g. genomics, pathology, etc
+    strategy:
+      matrix:
+        modality: ["radiology"]  #* add additional modalities here, e.g. genomics, pathology, etc
 
-#     steps:
-#       - name: Checkout repo
-#         uses: actions/checkout@v4
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-#       - name: Set up Python
-#         uses: actions/setup-python@v5
-#         with:
-#           python-version: "3.10"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-#       - name: Install dependencies
-#         run: |
-#           pip install -e .
+      - name: Install dependencies
+        run: |
+          pip install -e .
 
-#       - name: Run build script
-#         run: |
-#           python scripts/build_db.py --database-modality ${{ matrix.modality }}
+      - name: Run build script
+        run: |
+          echo "Skipping build step"
+          # python scripts/build_db.py --database-modality ${{ matrix.modality }}

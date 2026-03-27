@@ -226,9 +226,10 @@ def fetch_pubmed_details(id_list, batch_size=200):
         results.extend(records["PubmedArticle"])
     return results
 
-def fetch_pubmed_citation_counts(pmids, batch_size=100):
+def fetch_pubmed_citation_counts(pmids, batch_size=100, get_year=False):
     url = "https://icite.od.nih.gov/api/pubs"
     results = {}
+    year_results = {}
 
     for batch in tqdm(list(chunked(pmids, batch_size)), desc="Fetching citation counts"):
         try:
@@ -242,18 +243,26 @@ def fetch_pubmed_citation_counts(pmids, batch_size=100):
             # fill results for successful ones
             for p in data.get("data", []):
                 results[str(p["pmid"])] = p.get("citation_count", 0)
+                if get_year:
+                    year_results[str(p["pmid"])] = p.get("year", None)
 
             # handle missing PMIDs in response
             returned_pmids = {str(p["pmid"]) for p in data.get("data", [])}
             for pmid in batch:
                 if pmid not in returned_pmids:
                     results[str(pmid)] = 0  # or None
+                    if get_year:
+                        year_results[str(pmid)] = None
 
         except Exception:
             # fallback: assign 0/None for entire failed batch
             for pmid in batch:
                 results[str(pmid)] = 0  # or None
+                if get_year:
+                    year_results[str(pmid)] = None
 
+    if get_year:
+        return results, year_results
     return results
 
 def _extract_title(article) -> str:
