@@ -1,22 +1,24 @@
 import os
 import json
 import subprocess
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()   
+load_dotenv()
+
+LOG_LEVEL = logging.DEBUG  #* DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 @dataclass
 class Config:
     output_path: str = "data/radiology_db.csv"
     output_path_failed: str = "data/radiology_db_failed.csv"
     max_papers: Optional[int] = 9999  # None for all papers; set to small number for debugging
-    min_citations: int = 10  # filter out papers with fewer than this many citations (set to 0 to disable)
+    min_citations: int = 25  # filter out papers with fewer than this many citations (set to 0 to disable)
     num_tries_agent: int = 5
     overwrite: bool = False
-
 
 def get_model() -> str:
     model = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")
@@ -69,14 +71,14 @@ Extract:
 EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"
 
 #* for real time, set to None
-# IDS_TO_KEEP = None
-IDS_TO_KEEP = {
-    "36204533",  # RadImageNet
-    "31831740",  # MIMIC-CXR
-    "32457287",  # UK Biobank
-    "23884657",  # TCIA
-    "41781626",  # Merlin
-}
+IDS_TO_KEEP = None
+# IDS_TO_KEEP = {
+#     "36204533",  # RadImageNet
+#     "31831740",  # MIMIC-CXR
+#     "32457287",  # UK Biobank
+#     "23884657",  # TCIA
+#     "41781626",  # Merlin
+# }
 
 
 CLASSIFICATION_INSTRUCTIONS = (

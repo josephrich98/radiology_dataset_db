@@ -23,12 +23,12 @@ from pydantic import BaseModel, Field
 from Bio import Entrez
 from pydantic_ai import Agent, RunContext
 
-from src.config import CONFIG, MODEL, IDS_TO_KEEP, PUBMED_QUERY, EXTRACTION_INSTRUCTIONS, EXTRACTION_AGENT_INSTRUCTIONS, ADD_TEXT_EXTRACT
+from src.config import CONFIG, MODEL, IDS_TO_KEEP, PUBMED_QUERY, EXTRACTION_INSTRUCTIONS, EXTRACTION_AGENT_INSTRUCTIONS, ADD_TEXT_EXTRACT, LOG_LEVEL
 from src.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
 from src.pubmed_utils import extract_pubmed_metadata, search_pubmed, fetch_pubmed_details, fetch_pubmed_citation_counts, add_column_to_isolate_mesh_terms_from_pubmed_matches
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  #* DEBUG, INFO
+logger.setLevel(LOG_LEVEL)
 
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -89,6 +89,8 @@ class AdditionalData(str, Enum):
     HISTOLOGY = "histology"
     VQA = "VQA"
 
+
+# see RSNA schema: https://github.com/RSNA/ATLAS/blob/main/model.json - consider expanding modalities, and adding file format, resolution, 2D vs 3D (would require reading full text files and possibly following links to dataset repositories, which is more complex but could be future work)
 class RadiologyDataset(BaseModel):
     name: Optional[str] = Field(default=None)
     num_images: Optional[int] = None
@@ -117,18 +119,15 @@ class ExtractionDeps:
     title: str
     abstract: str
 
-
 # -----------------------------
 # AGENT
 # -----------------------------
 dataset_agent = Agent(
     MODEL,
     deps_type=ExtractionDeps,
-    output_type=RadiologyDataset,  #* change to str if running into bugs
+    output_type=RadiologyDataset,
     instructions=EXTRACTION_INSTRUCTIONS
 )
-
-
 
 @dataset_agent.instructions
 async def add_text(ctx: RunContext[ExtractionDeps]) -> str:
@@ -239,14 +238,14 @@ async def extract_with_agent(
                 for msg in result.all_messages():
                     logger.debug(msg)
                 return None  # reject if no dataset name extracted
-            else:
-                if not name_matches_title(output.name, title):  # reject if dataset name doesn't have meaningful match with title
-                    #* 3. Dataset name extracted but doesn't match title → reject (this is a signal that the extracted name may be spurious and not actually the name of a dataset created by the paper, especially if the LLM also thinks it's not likely to be a dataset paper)
-                    logger.debug(
-                        "Dataset name '%s' has no meaningful match with title and LLM does not think it's a dataset paper, rejecting output.",
-                        output.name
-                    )
-                    return None
+            # else:
+            #     if not name_matches_title(output.name, title):  # reject if dataset name doesn't have meaningful match with title
+            #         #* 3. Dataset name extracted but doesn't match title → reject (this is a signal that the extracted name may be spurious and not actually the name of a dataset created by the paper, especially if the LLM also thinks it's not likely to be a dataset paper)
+            #         logger.debug(
+            #             "Dataset name '%s' has no meaningful match with title and LLM does not think it's a dataset paper, rejecting output.",
+            #             output.name
+            #         )
+            #         return None
 
         return output
 
@@ -324,27 +323,32 @@ async def main():
     extracted_datasets: List[RadiologyDataset] = []
     failed_metadata = []
     for article in tqdm(articles):
-        publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
-        title = publication_metadata.get("title")
-        abstract = publication_metadata.get("abstract")
+        try:
+            publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
+            title = publication_metadata.get("title")
+            abstract = publication_metadata.get("abstract")
 
-        if title and title in titles_existing:
-            logger.debug(f"Article title already exists in output, skipping: {title}")
-            continue
+            if title and title in titles_existing:
+                logger.debug(f"Article title already exists in output, skipping: {title}")
+                continue
 
-        dataset = None
-        for _ in range(CONFIG.num_tries_agent):
-            dataset = await extract_with_agent(title, abstract, publication_metadata)
-            if dataset is not None:
-                break
+            dataset = None
+            for _ in range(CONFIG.num_tries_agent):
+                dataset = await extract_with_agent(title, abstract, publication_metadata)
+                if dataset is not None:
+                    break
+            
+            if isinstance(dataset, RadiologyDataset):
+                extracted_datasets.append(dataset)
+            else:
+                logger.debug(f"Extraction failed for article: {title}")
+                failed_metadata.append(publication_metadata)
+
+            await asyncio.sleep(1)  # rate limit
         
-        if isinstance(dataset, RadiologyDataset):
-            extracted_datasets.append(dataset)
-        else:
-            logger.debug(f"Extraction failed for article: {title}")
-            failed_metadata.append(publication_metadata)
-
-        await asyncio.sleep(1)  # rate limit
+        except KeyboardInterrupt:
+            logger.error("\nInterrupted — exiting loop early.")
+            break
 
     # Convert extracted datasets → dict rows
     rows = [d.model_dump() for d in extracted_datasets]

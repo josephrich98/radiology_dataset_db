@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 
-from src.config import MODEL, CLASSIFICATION_INSTRUCTIONS, CLASSIFICATION_AGENT_INSTRUCTIONS
+from src.config import MODEL, CLASSIFICATION_INSTRUCTIONS, CLASSIFICATION_AGENT_INSTRUCTIONS, LOG_LEVEL
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  #* DEBUG, INFO
+logger.setLevel(LOG_LEVEL)
 
 if not logger.handlers:
     handler = logging.StreamHandler()

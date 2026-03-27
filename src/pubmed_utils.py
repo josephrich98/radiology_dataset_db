@@ -10,8 +10,10 @@ from more_itertools import chunked
 from tqdm import tqdm
 from Bio import Entrez
 
+from src.config import LOG_LEVEL
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  #* DEBUG, INFO
+logger.setLevel(LOG_LEVEL)
 
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -188,6 +190,7 @@ def search_pubmed(pubmed_query: str, max_results: Optional[int] = None, batch_si
         total_to_fetch = min(max_results, count)
     
     if total_to_fetch > 10_000:
+        # TODO: implement more efficient fetching if we need to go beyond 10k, e.g. by splitting query into smaller date ranges or using other metadata filters
         raise ValueError(f"Requested {total_to_fetch} results, which exceeds the maximum of 10,000 allowed by NCBI. Please set max_results to 10,000 or fewer.")
 
     ids = []
