@@ -1,13 +1,13 @@
-import os
-import json
-import subprocess
 import logging
+import os
 from dataclasses import dataclass
+
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 
-from src.config import MODEL, CLASSIFICATION_INSTRUCTIONS, CLASSIFICATION_AGENT_INSTRUCTIONS, LOG_LEVEL
+from src.config import (CLASSIFICATION_AGENT_INSTRUCTIONS,
+                        CLASSIFICATION_INSTRUCTIONS, LOG_LEVEL, MODEL)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)

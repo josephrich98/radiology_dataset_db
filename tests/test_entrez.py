@@ -105,7 +105,7 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
 
     module = load_build_module(
         monkeypatch,
-        module_name="build_database_table_entrez_test",
+        module_name="build_db_entrez_test",
         live=True,
         skip_on_missing_dependency=True,
     )

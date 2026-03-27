@@ -39,7 +39,7 @@ pip install -e .
 ### 3. Rename `.env_sample` to `.env` and fill in your Entrez email and API key (optional but recommended for higher rate limits)
 
 ## 🚀 Usage
-python src/build_database_table.py
+python scripts/build_db.py
 
 ## Testing
 ### Just unit tests:

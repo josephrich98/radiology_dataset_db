@@ -1,14 +1,14 @@
-import os
-import time
-import requests
-import re
-import logging
 import ast
+import logging
+import os
+import re
+import time
 from typing import Dict, List, Optional, Set, Union
 
+import requests
+from Bio import Entrez
 from more_itertools import chunked
 from tqdm import tqdm
-from Bio import Entrez
 
 from src.config import LOG_LEVEL
 

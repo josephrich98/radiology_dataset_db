@@ -1,7 +1,7 @@
-import os
 import json
-import subprocess
 import logging
+import os
+import subprocess
 from dataclasses import dataclass
 from typing import Optional
 
@@ -71,14 +71,14 @@ Extract:
 EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"
 
 #* for real time, set to None
-IDS_TO_KEEP = None
-# IDS_TO_KEEP = {
-#     "36204533",  # RadImageNet
-#     "31831740",  # MIMIC-CXR
-#     "32457287",  # UK Biobank
-#     "23884657",  # TCIA
-#     "41781626",  # Merlin
-# }
+# IDS_TO_KEEP = None
+IDS_TO_KEEP = {
+    "36204533",  # RadImageNet
+    "31831740",  # MIMIC-CXR
+    "32457287",  # UK Biobank
+    "23884657",  # TCIA
+    "41781626",  # Merlin
+}
 
 
 CLASSIFICATION_INSTRUCTIONS = (

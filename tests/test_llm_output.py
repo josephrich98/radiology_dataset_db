@@ -88,7 +88,7 @@ def test_extract_with_agent_integration(monkeypatch, paper_key):
     if not _has_integration_dependencies():
         pytest.skip("Integration test requires dotenv, pydantic_ai, Bio, and pydantic")
 
-    module = load_build_module(monkeypatch, module_name="build_database_table_live_under_test", live=True)
+    module = load_build_module(monkeypatch, module_name="build_db_live_under_test", live=True)
     papers = _paper_ground_truth()
     paper = papers[paper_key]
 
