@@ -157,7 +157,7 @@ def name_matches_title(dataset_name: str, title: str) -> bool:
 # -----------------------------
 # LLM EXTRACTION (ASYNC)
 # -----------------------------
-async def extract_with_agent(
+async def extract_radiology_dataset_info_with_agent(
     title: str,
     abstract: str,
     publication_metadata: Optional[dict] = None,

@@ -7,11 +7,12 @@ from typing import List
 import pandas as pd
 from Bio import Entrez
 from dotenv import load_dotenv
+from pydantic import BaseModel
 from tqdm import tqdm
 
 from src.config import CONFIG, IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
-from src.extract_radiology_dataset_information_llm import (RadiologyDataset,
-                                                           extract_with_agent)
+#* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc
+from src.extract_radiology_dataset_information_llm import extract_radiology_dataset_info_with_agent
 from src.pubmed_utils import (
     add_column_to_isolate_mesh_terms_from_pubmed_matches,
     extract_pubmed_metadata, fetch_pubmed_citation_counts,
@@ -33,6 +34,7 @@ load_dotenv()
 def parse_args():
     parser = argparse.ArgumentParser(description="Build radiology dataset table")
 
+    parser.add_argument("--database-modality", type=str)
     parser.add_argument("--output-path", type=str)
     parser.add_argument("--output-path-failed", type=str)
     parser.add_argument("--max-papers", type=int)
@@ -120,7 +122,7 @@ async def main():
         logger.warning("No articles found.")
         return
 
-    extracted_datasets: List[RadiologyDataset] = []
+    extracted_datasets: List[BaseModel] = []
     failed_metadata = []
     for article in tqdm(articles):
         try:
@@ -134,11 +136,15 @@ async def main():
 
             dataset = None
             for _ in range(CONFIG.num_tries_agent):
-                dataset = await extract_with_agent(title, abstract, publication_metadata)
+                if CONFIG.database_modality == "radiology":
+                    dataset = await extract_radiology_dataset_info_with_agent(title, abstract, publication_metadata)
+                #* add additional modalities here with corresponding extraction functions, e.g. genomics, pathology, etc
+                else:
+                    raise ValueError(f"Unsupported database modality: {CONFIG.database_modality}. Supported modalities: radiology.")
                 if dataset is not None:
                     break
             
-            if isinstance(dataset, RadiologyDataset):
+            if isinstance(dataset, BaseModel):
                 extracted_datasets.append(dataset)
             else:
                 logger.debug(f"Extraction failed for article: {title}")
@@ -175,7 +181,7 @@ async def main():
     # Save to CSV
     df.to_csv(CONFIG.output_path, index=False)
 
-    if CONFIG.output_path_failed:
+    if CONFIG.output_path_failed and CONFIG.output_path_failed != "None":  # catch "None" string from env var
         if len(failed_metadata) == 0:
             logger.info("No failed extractions to save.")
         else:

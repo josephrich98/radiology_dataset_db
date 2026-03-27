@@ -41,6 +41,13 @@ pip install -e .
 ## 🚀 Usage
 python scripts/build_db.py
 
+## To add more modalities (e.g., genomics, pathology):
+1. Define new dataset schema and extraction instructions in `src/config.py`
+2. Implement new class and extraction function in `src/extract_MODALITY_dataset_information_llm.py`
+3. Import and call the new extraction function in `scripts/build_db.py` and add a conditional to check the modality type
+4. Optionally, update .github/workflows/update_dbs.yml to run the pipeline for the new modality on a schedule
+All instructions are notaded in the code with comments like `#* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc`
+
 ## Testing
 ### Just unit tests:
 pytest

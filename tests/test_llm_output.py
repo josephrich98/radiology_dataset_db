@@ -82,7 +82,7 @@ NUM_TRIES_AGENT_TEST = 2  # I already loop internally, so this would only be to 
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.parametrize("paper_key", PAPER_KEYS)
-def test_extract_with_agent_integration(monkeypatch, paper_key):
+def test_extract_radiology_dataset_info_with_agent_integration(monkeypatch, paper_key):
     if not (os.getenv("VLLM_PORT") or os.getenv("OPENAI_API_KEY")):
         pytest.skip("Integration test requires VLLM_PORT or OPENAI_API_KEY")
     if not _has_integration_dependencies():
@@ -104,7 +104,7 @@ def test_extract_with_agent_integration(monkeypatch, paper_key):
 
     dataset = None
     for _ in range(NUM_TRIES_AGENT_TEST):
-        dataset = asyncio.run(module.extract_with_agent(title=title, abstract=abstract, publication_metadata=publication_metadata))
+        dataset = asyncio.run(module.extract_radiology_dataset_info_with_agent(title=title, abstract=abstract, publication_metadata=publication_metadata))
         if dataset is not None:
             break
 

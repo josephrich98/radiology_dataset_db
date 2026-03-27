@@ -2,23 +2,28 @@ import json
 import logging
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-LOG_LEVEL = logging.DEBUG  #* DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL = logging.DEBUG  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 @dataclass
 class Config:
-    output_path: str = "data/radiology_db.csv"
-    output_path_failed: str = "data/radiology_db_failed.csv"
+    database_modality: str = "radiology"  # e.g. radiology, genomics, pathology, etc
     max_papers: Optional[int] = 9999  # None for all papers; set to small number for debugging
     min_citations: int = 25  # filter out papers with fewer than this many citations (set to 0 to disable)
     num_tries_agent: int = 5
     overwrite: bool = False
+
+    output_path: str = field(init=False)
+    output_path_failed: str = field(init=False)
+    def __post_init__(self):
+        self.output_path = f"data/{self.database_modality}_db.csv"
+        self.output_path_failed = None  # f"data/{self.database_modality}_db_failed.csv"
 
 def get_model() -> str:
     model = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")
@@ -40,6 +45,7 @@ def get_model() -> str:
 CONFIG = Config()
 MODEL = get_model()
 
+#* PubMed
 # MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
 PUBMED_QUERY = """
 ("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti] OR benchmark[ti] OR "challenge data"[ti] OR "data commons"[ti] OR "data repository"[ti] OR "data sharing"[ti])
@@ -47,6 +53,22 @@ AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"
 """  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
 PUBMED_QUERY = " ".join(PUBMED_QUERY.split())  # strip new lines
 
+#* is_database_paper_classifier_llm.py
+CLASSIFICATION_INSTRUCTIONS = (
+    "Determine whether the paper INTRODUCES or CREATES a dataset.\n"
+    "Return is_dataset_creation = true if:\n"
+    "- The paper develops, constructs, introduces, or presents a dataset/database/benchmark\n"
+    "- Even if the dataset has no explicit name\n\n"
+    "Return false if:\n"
+    "- The paper only uses existing datasets\n"
+    "- It is a methods/model paper\n"
+    "- It analyzes data without creating a dataset\n\n"
+    "Be conservative: if unsure, return true."
+)
+
+CLASSIFICATION_AGENT_INSTRUCTIONS = "Classify whether this paper creates a dataset"
+
+#* extract_radiology_dataset_information_llm.py
 EXTRACTION_INSTRUCTIONS = (
     "You MUST extract a dataset name.\n"
     "Never return null for name.\n"
@@ -70,27 +92,14 @@ Extract:
 
 EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"
 
-#* for real time, set to None
-# IDS_TO_KEEP = None
-IDS_TO_KEEP = {
-    "36204533",  # RadImageNet
-    "31831740",  # MIMIC-CXR
-    "32457287",  # UK Biobank
-    "23884657",  # TCIA
-    "41781626",  # Merlin
-}
+#$ for real time, set to None
+IDS_TO_KEEP = None
+# IDS_TO_KEEP = {
+#     "36204533",  # RadImageNet
+#     "31831740",  # MIMIC-CXR
+#     "32457287",  # UK Biobank
+#     "23884657",  # TCIA
+#     "41781626",  # Merlin
+# }
 
-
-CLASSIFICATION_INSTRUCTIONS = (
-    "Determine whether the paper INTRODUCES or CREATES a dataset.\n"
-    "Return is_dataset_creation = true if:\n"
-    "- The paper develops, constructs, introduces, or presents a dataset/database/benchmark\n"
-    "- Even if the dataset has no explicit name\n\n"
-    "Return false if:\n"
-    "- The paper only uses existing datasets\n"
-    "- It is a methods/model paper\n"
-    "- It analyzes data without creating a dataset\n\n"
-    "Be conservative: if unsure, return true."
-)
-
-CLASSIFICATION_AGENT_INSTRUCTIONS = "Classify whether this paper creates a dataset"
+#* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc
