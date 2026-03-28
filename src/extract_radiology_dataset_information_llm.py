@@ -62,6 +62,7 @@ class RadiologyDataset(BaseModel):
     modalities: List[Modality] = Field(default_factory=list)
     body_regions: List[BodyRegion] = Field(default_factory=list)
     additional_data: List[AdditionalData] = Field(default_factory=list)
+    dataset_link: Optional[str] = None
     paper_title: Optional[str] = None
     # paper_abstract: Optional[str] = None
     paper_link: Optional[str] = None

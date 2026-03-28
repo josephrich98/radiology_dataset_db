@@ -16,7 +16,7 @@ class Config:
     database_modality: str = "radiology"  # e.g. radiology, genomics, pathology, etc
     max_papers: Optional[int] = 9999  # None for all papers; set to small number for debugging
     min_citations: int = 25  # filter out papers with fewer than this many citations (set to 0 to disable)
-    citation_number_grace_period_years: int = 2  # allow extra grace period for recent papers to accumulate citations
+    citation_number_grace_period_years: int = 1  # allow extra grace period for recent papers to accumulate citations - e.g., if set to 1 and the current year is 2026, then papers published in 2025 and 2026 will be exempt from the citation filter
     num_tries_agent: int = 5
     overwrite: bool = False
 
@@ -50,7 +50,7 @@ MODEL = get_model()
 # MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
 PUBMED_QUERY = """
 ("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti] OR benchmark[ti] OR "challenge data"[ti] OR "data commons"[ti] OR "data repository"[ti] OR "data sharing"[ti])
-AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR "Diagnostic Imaging"[tiab] OR "Medical Image"[tiab] OR "Medical Imaging"[tiab] OR "Biomedical Image"[tiab] OR "Biomedical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
+AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR radiographs[tiab] OR "Diagnostic Imaging"[tiab] OR "Medical Image"[tiab] OR "Medical Imaging"[tiab] OR "Biomedical Image"[tiab] OR "Biomedical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
 NOT (("Nuclear Magnetic Resonance"[tiab] OR NMR[tiab]) OR ("X-ray crystallography"[tiab] OR crystallograph*[tiab] OR diffraction[tiab]) OR (mice[tiab] or mouse[tiab]))
 """  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
 PUBMED_QUERY = " ".join(PUBMED_QUERY.split())  # strip new lines
@@ -69,6 +69,25 @@ CLASSIFICATION_INSTRUCTIONS = (
 )
 
 CLASSIFICATION_AGENT_INSTRUCTIONS = "Classify whether this paper creates a dataset"
+
+#* check_if_dataset_is_available_llm.py
+DATASET_AVAILABILITY_INSTRUCTIONS = (
+    "Determine whether the paper indicates that its dataset is publicly available.\n"
+    "Return is_publicly_available = true if there is direct evidence in the provided text such as:\n"
+    "- explicit language like 'open', 'publicly available', 'public', 'available', or a data availability statement\n"
+    "- a non-DOI URL (e.g., GitHub, Zenodo, institutional repository, challenge site, or dataset website)\n"
+    "- wording that readers can access or download the dataset\n\n"
+    "Return false if:\n"
+    "- the text only says data are available on request\n"
+    "- access is restricted, private, proprietary, or behind an application process\n"
+    "- only a DOI to the paper is provided without dataset access evidence\n"
+    "- there is no clear evidence of public dataset availability\n\n"
+    "Use title, abstract, and full text (if provided). Be conservative: if unsure, return false."
+)
+
+DATASET_AVAILABILITY_AGENT_INSTRUCTIONS = (
+    "Classify whether the dataset described in this paper is publicly available."
+)
 
 #* extract_radiology_dataset_information_llm.py
 EXTRACTION_INSTRUCTIONS = (
@@ -90,6 +109,7 @@ Extract:
 - imaging modalities: CT, MRI, X-ray, US, PET
 - body regions: brain, chest, abdomen, pelvis, limbs
 - additional data (reports, captions, segmentation, genomics, VQA, etc)
+- the http link to the dataset, if available at the end of the abstract
 """
 
 EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"

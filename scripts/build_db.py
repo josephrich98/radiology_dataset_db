@@ -14,10 +14,11 @@ from tqdm import tqdm
 from src.config import CONFIG, IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
 #* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc
 from src.extract_radiology_dataset_information_llm import extract_radiology_dataset_info_with_agent
+from src.check_if_dataset_is_available_llm import check_if_dataset_is_available
 from src.pubmed_utils import (
     add_column_to_isolate_mesh_terms_from_pubmed_matches,
     extract_pubmed_metadata, fetch_pubmed_citation_counts,
-    fetch_pubmed_details, search_pubmed)
+    fetch_pubmed_details, search_pubmed, try_to_get_full_text, check_url)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
@@ -121,7 +122,24 @@ async def main():
 
     if CONFIG.min_citations > 0:
         current_time = pd.Timestamp.now()
-        ids = [id for id in ids if citation_counts_by_pmid.get(id, 0) >= CONFIG.min_citations and year_results.get(id) is not None and year_results.get(id) <= (current_time - math.floor(CONFIG.citation_number_grace_period_years))]
+        threshold_year = current_time - math.floor(CONFIG.citation_number_grace_period_years)
+        
+        filtered_ids = []
+        for id in ids:
+            year = year_results.get(id)
+            if year is None:
+                continue
+
+            citations = citation_counts_by_pmid.get(id, 0)
+
+            # Grace period logic
+            if year >= threshold_year:
+                filtered_ids.append(id)
+            else:
+                if citations >= CONFIG.min_citations:
+                    filtered_ids.append(id)
+        
+        ids = filtered_ids
         logger.info(f"After filtering out articles with fewer than {CONFIG.min_citations} citations, {len(ids)} articles remain.")
     
     logger.info(f"{len(ids)} articles will be processed for dataset extraction.")
@@ -154,7 +172,13 @@ async def main():
                     break
             
             if isinstance(dataset, BaseModel):
-                extracted_datasets.append(dataset)
+                full_text = try_to_get_full_text(article)
+                dataset_is_available = check_if_dataset_is_available(title, abstract, full_text=full_text)
+                if dataset_is_available:
+                    extracted_datasets.append(dataset)
+                else:
+                    logger.debug(f"Dataset described in article is not currently available, skipping: {title}")
+                    failed_metadata.append(publication_metadata)
             else:
                 logger.debug(f"Extraction failed for article: {title}")
                 failed_metadata.append(publication_metadata)
@@ -169,6 +193,10 @@ async def main():
     rows = [d.model_dump() for d in extracted_datasets]
     new_df = pd.DataFrame(rows)
 
+    # de-duplicate by keeping oldest (identical title first, then identical name)
+    new_df = new_df.sort_values("paper_year", ascending=True).drop_duplicates(subset=["title"], keep="first")
+    new_df = new_df.sort_values("paper_year", ascending=True).drop_duplicates(subset=["name"], keep="first")
+
     logger.info(f"Extracted {len(new_df)} datasets from {len(articles)} articles.")
     logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
 
@@ -177,6 +205,12 @@ async def main():
         breakpoint()
         new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
     
+    # check if link works
+    if "dataset_link" in new_df.columns:
+        new_df["link_works"] = new_df["dataset_link"].apply(check_url)
+        link_works_col = new_df.pop("link_works")  # place this column right after dataset_link column
+        new_df.insert(new_df.columns.get_loc("dataset_link") + 1, "link_works", link_works_col)
+
     new_df["date_added"] = pd.Timestamp.now().isoformat()
     
     # convert list fields to comma-separated strings for CSV output

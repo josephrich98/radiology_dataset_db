@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Set, Union
 
 import requests
 from Bio import Entrez
+import pandas as pd
 from more_itertools import chunked
 from tqdm import tqdm
 
@@ -608,3 +609,83 @@ def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str,
     }
 
     return pubmed_metadata
+
+
+def try_to_get_full_text(article, delay: float = 0.34) -> str | None:
+    """
+    Given a PubMed article dict (from Entrez.read),
+    attempt to retrieve full text.
+
+    Returns:
+        - PMC full text XML (str), OR
+        - PDF URL (str), OR
+        - None
+    """
+
+    try:
+        # -----------------------------
+        # Extract identifiers
+        # -----------------------------
+        article_ids = article["PubmedData"]["ArticleIdList"]
+
+        doi = None
+        pmcid = None
+
+        for id_obj in article_ids:
+            id_type = id_obj.attributes.get("IdType")
+            if id_type == "doi":
+                doi = str(id_obj)
+            elif id_type == "pmc":
+                pmcid = str(id_obj)
+
+        # -----------------------------
+        # Try PMC (best case)
+        # -----------------------------
+        if pmcid:
+            try:
+                handle = Entrez.efetch(
+                    db="pmc",
+                    id=pmcid,
+                    rettype="full",
+                    retmode="xml"
+                )
+                full_text_xml = handle.read()
+                time.sleep(delay)
+                return full_text_xml
+            except Exception:
+                pass
+
+        # -----------------------------
+        # Try Unpaywall (PDF fallback)
+        # -----------------------------
+        if doi:
+            try:
+                url = f"https://api.unpaywall.org/v2/{doi}"
+                params = {"email": Entrez.email}
+                r = requests.get(url, params=params, timeout=10)
+
+                if r.status_code == 200:
+                    data = r.json()
+                    pdf_url = data.get("best_oa_location", {}).get("url_for_pdf")
+                    if pdf_url:
+                        return pdf_url
+            except Exception:
+                pass
+
+        return None
+
+    except Exception:
+        return None
+    
+def check_url(url, timeout=5):
+    if pd.isna(url):
+        return None
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=timeout)
+        if response.status_code < 400:
+            return True
+        # fallback to GET (some servers block HEAD)
+        response = requests.get(url, allow_redirects=True, timeout=timeout)
+        return response.status_code < 400
+    except requests.RequestException:
+        return False
