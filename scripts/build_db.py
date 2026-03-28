@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from tqdm import tqdm
 
-from radiology_dataset_db.config import IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
+from radiology_dataset_db.config import IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY_DICT
 #* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc
 from radiology_dataset_db import extract_bulk_genomics_dataset_info_with_agent, extract_radiology_dataset_info_with_agent, extract_scrnaseq_dataset_info_with_agent, extract_spatial_transcriptomics_dataset_info_with_agent
 from radiology_dataset_db.check_if_dataset_is_available_llm import check_if_dataset_is_available
@@ -46,6 +46,7 @@ def parse_args():
     parser.add_argument("--min-citations", type=int, default=25, help="Minimum number of citations for a paper to be included.")
     parser.add_argument("--citation-number-grace-period-years", type=int, default=1, help="Number of years to allow for citation count grace period.")  #  e.g., if set to 1 and the current year is 2026, then papers published in 2025 and 2026 will be exempt from the citation filter - set to 0 to disable the grace period
     parser.add_argument("--num-tries-agent", type=int, default=5, help="Number of times to retry dataset extraction for each paper.")
+    parser.add_argument("--article-timeout-seconds", type=float, default=300.0, help="Max seconds allowed for processing a single article before marking it as failed. Set <=0 to disable timeout.")
     parser.add_argument("-t", "--threads", type=int, default=1, help="Number of threads to use for parallel processing.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files.")
 
@@ -61,31 +62,61 @@ def getenv(key: str) -> str:
     return value
 
 
-async def extract_dataset_with_retries(title: str, abstract: str, publication_metadata: dict, args):
+async def extract_dataset_with_retries(
+    title: str,
+    abstract: str,
+    publication_metadata: dict,
+    database_modality: str,
+    num_tries_agent: int,
+):
     dataset = None
-    for _ in range(args.num_tries_agent):
-        if args.database_modality == "radiology":
+    for _ in range(num_tries_agent):
+        if database_modality == "radiology":
             dataset = await extract_radiology_dataset_info_with_agent(title, abstract, publication_metadata)
-        elif args.database_modality == "scrnaseq":
+        elif database_modality == "scrnaseq":
             dataset = await extract_scrnaseq_dataset_info_with_agent(title, abstract, publication_metadata)
-        elif args.database_modality == "bulk_genomics":
+        elif database_modality == "bulk_genomics":
             dataset = await extract_bulk_genomics_dataset_info_with_agent(title, abstract, publication_metadata)
-        elif args.database_modality == "spatial_transcriptomics":
+        elif database_modality == "spatial_transcriptomics":
             dataset = await extract_spatial_transcriptomics_dataset_info_with_agent(title, abstract, publication_metadata)
         #* add additional modalities here with corresponding extraction functions, e.g. genomics, pathology, etc
         else:
             raise ValueError(
-                f"Unsupported database modality: {args.database_modality}. Supported modalities: {SUPPORTED_MODALITIES}."
+                f"Unsupported database modality: {database_modality}. Supported modalities: {SUPPORTED_MODALITIES}."
             )
         if dataset is not None:
             break
     return dataset
 
 
-async def process_publication_metadata(publication_metadata: dict, check_dataset_is_available: bool, args):
+async def process_publication_metadata(
+    publication_metadata: dict,
+    check_dataset_is_available: bool,
+    database_modality: str,
+    num_tries_agent: int,
+    timeout_seconds: float | None,
+):
     title = publication_metadata.get("title")
     abstract = publication_metadata.get("abstract")
-    dataset = await extract_dataset_with_retries(title, abstract, publication_metadata, args)
+    if timeout_seconds is not None and timeout_seconds > 0:
+        dataset = await asyncio.wait_for(
+            extract_dataset_with_retries(
+                title,
+                abstract,
+                publication_metadata,
+                database_modality,
+                num_tries_agent,
+            ),
+            timeout=timeout_seconds,
+        )
+    else:
+        dataset = await extract_dataset_with_retries(
+            title,
+            abstract,
+            publication_metadata,
+            database_modality,
+            num_tries_agent,
+        )
 
     if isinstance(dataset, BaseModel):
         logger.debug(f"Extraction successful for article: {title}. Checking dataset availability...")
@@ -108,9 +139,12 @@ def process_article_threaded(
     citation_counts_by_pmid,
     titles_existing,
     check_dataset_is_available,
-    args,
+    database_modality,
+    num_tries_agent,
+    timeout_seconds,
+    pubmed_query
 ):
-    publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
+    publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=pubmed_query)
     title = publication_metadata.get("title")
 
     if title and title in titles_existing:
@@ -118,7 +152,20 @@ def process_article_threaded(
         return None, None
 
     try:
-        return asyncio.run(process_publication_metadata(publication_metadata, check_dataset_is_available, args))
+        return asyncio.run(
+            process_publication_metadata(
+                publication_metadata,
+                check_dataset_is_available,
+                database_modality,
+                num_tries_agent,
+                timeout_seconds,
+            )
+        )
+    except TimeoutError:
+        logger.warning(f"Timed out processing article with title: {title} after {timeout_seconds}s")
+        failed = dict(publication_metadata)
+        failed["failure_reason"] = f"timeout_after_{timeout_seconds}_seconds"
+        return None, failed
     except Exception as e:
         logger.error(f"Error processing article with title: {title}. Error: {e}")
         return None, publication_metadata
@@ -217,6 +264,10 @@ def save_progress(args, df_existing, extracted_datasets: List[BaseModel], failed
 async def main():
     args = parse_args()
 
+    pubmed_query = PUBMED_QUERY_DICT.get(args.database_modality)
+    if not pubmed_query:
+        raise ValueError(f"No PubMed query found for modality {args.database_modality}. Please check the config or specify a supported modality. Supported modalities: {SUPPORTED_MODALITIES}.")
+
     if os.path.exists(args.output_path):
         if args.overwrite:
             confirm = input(f"Output file {args.output_path} already exists. Do you want to overwrite it? (y/n): ")
@@ -248,7 +299,7 @@ async def main():
         pmids_existing = set(df["pmid"].dropna().astype(str))
         logger.info(f"Found {len(pmids_existing)} existing PMIDs in output file. These will be skipped in the new extraction.")
 
-    ids = search_pubmed(PUBMED_QUERY, args.max_papers)
+    ids = search_pubmed(pubmed_query, args.max_papers)
     if not ids:
         logger.warning("No articles found.")
         return
@@ -303,11 +354,14 @@ async def main():
         return
 
     check_dataset_is_available = False
+    timeout_seconds = args.article_timeout_seconds
     extracted_datasets: List[BaseModel] = []
     failed_metadata = []
     interrupted = False
     if args.threads < 1:
         raise ValueError("threads must be >= 1")
+    if args.article_timeout_seconds is not None and args.article_timeout_seconds <= 0:
+        logger.info("Per-article timeout disabled.")
 
     try:
         if args.threads == 1:
@@ -315,14 +369,20 @@ async def main():
                 publication_metadata = {}
                 title = None
                 try:
-                    publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
+                    publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=pubmed_query)
                     title = publication_metadata.get("title")
 
                     if title and title in titles_existing:
                         logger.debug(f"Article title already exists in output, skipping: {title}")
                         continue
 
-                    dataset, failure = await process_publication_metadata(publication_metadata, check_dataset_is_available, args)
+                    dataset, failure = await process_publication_metadata(
+                        publication_metadata,
+                        check_dataset_is_available,
+                        args.database_modality,
+                        args.num_tries_agent,
+                        timeout_seconds,
+                    )
                     if dataset is not None:
                         extracted_datasets.append(dataset)
                     elif failure is not None:
@@ -334,6 +394,12 @@ async def main():
                     interrupted = True
                     logger.warning("Interrupted during processing loop. Saving partial progress...")
                     break
+                except TimeoutError:
+                    logger.warning(f"Timed out processing article with title: {title} after {timeout_seconds}s")
+                    failed = dict(publication_metadata)
+                    failed["failure_reason"] = f"timeout_after_{timeout_seconds}_seconds"
+                    failed_metadata.append(failed)
+                    continue
                 except Exception as e:
                     logger.error(f"Error processing article with title: {title}. Error: {e}")
                     failed_metadata.append(publication_metadata)
@@ -352,7 +418,10 @@ async def main():
                         citation_counts_by_pmid,
                         titles_existing,
                         check_dataset_is_available,
-                        args,
+                        args.database_modality,
+                        args.num_tries_agent,
+                        timeout_seconds,
+                        pubmed_query
                     )
                     for article in articles
                 ]

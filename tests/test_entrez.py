@@ -111,7 +111,7 @@ def _assert_entrez_for_expected_dois(expected_dois, expected_dates=None, expect_
         print("Using Entrez API key from environment variable for test.")
         Entrez.api_key = os.getenv("ENTREZ_API_KEY")
 
-    query = config_module.PUBMED_QUERY
+    query = config_module.PUBMED_QUERY_RADIOLOGY
 
     if expected_dates is None:  # search for all one time
         print("Doing single Entrez search without date filtering for expected DOIs.")

@@ -37,15 +37,6 @@ def get_model() -> str:
 
 MODEL = get_model()
 
-#* PubMed
-# MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
-PUBMED_QUERY = """
-("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti] OR benchmark[ti] OR "challenge data"[ti] OR "data commons"[ti] OR "data repository"[ti] OR "data sharing"[ti])
-AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR radiographs[tiab] OR "Diagnostic Imaging"[tiab] OR "Medical Image"[tiab] OR "Medical Imaging"[tiab] OR "Biomedical Image"[tiab] OR "Biomedical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
-NOT (("Nuclear Magnetic Resonance"[tiab] OR NMR[tiab]) OR ("X-ray crystallography"[tiab] OR crystallograph*[tiab] OR diffraction[tiab]) OR (mice[tiab] or mouse[tiab]))
-"""  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
-PUBMED_QUERY = " ".join(PUBMED_QUERY.split())  # strip new lines
-
 #* is_database_paper_classifier_llm.py
 CLASSIFICATION_INSTRUCTIONS = (
     "Determine whether the paper INTRODUCES or CREATES a dataset.\n"
@@ -81,7 +72,14 @@ DATASET_AVAILABILITY_AGENT_INSTRUCTIONS = (
 )
 
 #* extract_radiology_dataset_information_llm.py
-EXTRACTION_INSTRUCTIONS = (
+# MeSH terms: https://www.ncbi.nlm.nih.gov/mesh/?term=%22radiology%22%5BMeSH%20Terms%5D%20OR%20%22radiographic%22%5BMeSH%20Terms%5D%20OR%20%22radiography%22%5BMeSH%20Terms%5D%20OR%20radiology%5BText%20Word%5D&cmd=DetailsSearch
+PUBMED_QUERY_RADIOLOGY = """
+("Database Management Systems"[MeSH] OR dataset[ti] OR database[ti] OR "data collection"[ti] OR "information repository"[ti] OR benchmark[ti] OR "challenge data"[ti] OR "data commons"[ti] OR "data repository"[ti] OR "data sharing"[ti])
+AND ("Radiology"[MeSH] OR "Radiography"[MeSH] OR "Radiology Information Systems"[MeSH] OR radiology[tiab] OR radiograph[tiab] OR radiographs[tiab] OR "Diagnostic Imaging"[tiab] OR "Medical Image"[tiab] OR "Medical Imaging"[tiab] OR "Biomedical Image"[tiab] OR "Biomedical Imaging"[tiab] OR XR[tiab] OR CT[tiab] OR MRI[tiab] OR PET[tiab] OR SPECT[tiab] OR "X-ray"[tiab] OR "Computed Tomography"[tiab] OR "Magnetic Resonance"[tiab] OR Ultrasound[tiab] OR "Positron Emission Tomography"[tiab] OR "Single Photon Emission Computed Tomography"[tiab])
+NOT (("Nuclear Magnetic Resonance"[tiab] OR NMR[tiab]) OR ("X-ray crystallography"[tiab] OR crystallograph*[tiab] OR diffraction[tiab]) OR (mice[tiab] or mouse[tiab]))
+"""  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
+
+EXTRACTION_INSTRUCTIONS_RADIOLOGY = (
     "You MUST extract a dataset name.\n"
     "Never return null for name.\n"
     "If uncertain, choose the most likely dataset or cohort name.\n"
@@ -92,7 +90,7 @@ EXTRACTION_INSTRUCTIONS = (
     "- RadImageNet\n"
 )
 
-ADD_TEXT_EXTRACT = f"""
+ADD_TEXT_EXTRACT_RADIOLOGY = f"""
 Extract:
 - dataset name (best candidate; often found directly in the title, e.g. "UK Biobank", "MIMIC-CXR", "RadImageNet" — use the name as it appears)
 - number of patients or participants
@@ -103,9 +101,11 @@ Extract:
 - the http link to the dataset, if available at the end of the abstract
 """
 
-EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"
+EXTRACTION_AGENT_INSTRUCTIONS_RADIOLOGY = "Extract dataset information"
 
 #* extract_scrnaseq_dataset_information_llm.py
+PUBMED_QUERY_SCRNASEQ = ""
+
 EXTRACTION_INSTRUCTIONS_SCRNASEQ = (
     "You MUST extract a dataset name.\n"
     "Never return null for name.\n"
@@ -129,6 +129,8 @@ Extract:
 EXTRACTION_AGENT_INSTRUCTIONS_SCRNASEQ = "Extract scRNA-seq/snRNA-seq dataset information"
 
 #* extract_bulk_genomics_dataset_information_llm.py
+PUBMED_QUERY_BULK_GENOMICS = ""
+
 EXTRACTION_INSTRUCTIONS_BULK_GENOMICS = (
     "You MUST extract a dataset name.\n"
     "Never return null for name.\n"
@@ -152,6 +154,8 @@ Extract:
 EXTRACTION_AGENT_INSTRUCTIONS_BULK_GENOMICS = "Extract bulk genomics dataset information"
 
 #* extract_spatial_transcriptomics_dataset_information_llm.py
+PUBMED_QUERY_SPATIAL_TRANSCRIPTOMICS = ""
+
 EXTRACTION_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = (
     "You MUST extract a dataset name.\n"
     "Never return null for name.\n"
@@ -175,3 +179,13 @@ Extract:
 EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = "Extract spatial transcriptomics dataset information"
 
 #* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc
+
+
+
+PUBMED_QUERY_DICT = {
+    "radiology": " ".join(PUBMED_QUERY_RADIOLOGY.split()),  # strip new lines
+    "scrnaseq": " ".join(PUBMED_QUERY_SCRNASEQ.split()),  # strip new lines
+    "bulk_genomics": " ".join(PUBMED_QUERY_BULK_GENOMICS.split()),  # strip new lines
+    "spatial_transcriptomics": " ".join(PUBMED_QUERY_SPATIAL_TRANSCRIPTOMICS.split()),  # strip new lines
+}  
+#* add additional PubMed queries for other modalities here, e.g. genomics, pathology, etc

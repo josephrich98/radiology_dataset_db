@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from radiology_dataset_db.config import (ADD_TEXT_EXTRACT, EXTRACTION_AGENT_INSTRUCTIONS,
-                        EXTRACTION_INSTRUCTIONS, LOG_LEVEL, MODEL)
+from radiology_dataset_db.config import (ADD_TEXT_EXTRACT_RADIOLOGY, EXTRACTION_AGENT_INSTRUCTIONS_RADIOLOGY,
+                        EXTRACTION_INSTRUCTIONS_RADIOLOGY, LOG_LEVEL, MODEL)
 from radiology_dataset_db.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ dataset_agent = Agent(
     MODEL,
     deps_type=ExtractionDeps,
     output_type=RadiologyDataset,
-    instructions=EXTRACTION_INSTRUCTIONS
+    instructions=EXTRACTION_INSTRUCTIONS_RADIOLOGY
 )
 
 @dataset_agent.instructions
@@ -99,7 +99,7 @@ Text:
 Title: {ctx.deps.title}
 Abstract: {ctx.deps.abstract}
 
-{ADD_TEXT_EXTRACT}
+{ADD_TEXT_EXTRACT_RADIOLOGY}
 """
 
 def serialize_dataset_output(dataset: Union[RadiologyDataset, str]) -> str:
@@ -176,7 +176,7 @@ async def extract_radiology_dataset_info_with_agent(
 
         #* Now run the extraction agent.
         result = await dataset_agent.run(
-            EXTRACTION_AGENT_INSTRUCTIONS, deps=deps
+            EXTRACTION_AGENT_INSTRUCTIONS_RADIOLOGY, deps=deps
         )
 
         output = result.output
