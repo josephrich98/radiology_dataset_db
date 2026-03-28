@@ -14,11 +14,16 @@ from tqdm import tqdm
 from src.config import CONFIG, IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
 #* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc
 from src.extract_radiology_dataset_information_llm import extract_radiology_dataset_info_with_agent
+from src.extract_scrnaseq_dataset_information_llm import extract_scrnaseq_dataset_info_with_agent
+from src.extract_bulk_genomics_dataset_information_llm import extract_bulk_genomics_dataset_info_with_agent
+from src.extract_spatial_transcriptomics_dataset_information_llm import extract_spatial_transcriptomics_dataset_info_with_agent
 from src.check_if_dataset_is_available_llm import check_if_dataset_is_available
 from src.pubmed_utils import (
     add_column_to_isolate_mesh_terms_from_pubmed_matches,
     extract_pubmed_metadata, fetch_pubmed_citation_counts,
     fetch_pubmed_details, search_pubmed, try_to_get_full_text, check_url)
+
+SUPPORTED_MODALITIES = {"radiology", "scrnaseq", "bulk_genomics", "spatial_transcriptomics"}
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
@@ -48,16 +53,47 @@ def parse_args():
     return parser.parse_args()
 
 def apply_overrides(args):
+    modality_changed = False
+    output_path_overridden = False
+
     for key, value in vars(args).items():
         if value is not None and hasattr(CONFIG, key) and getattr(CONFIG, key) != value:
             logger.info(f"Overriding config: {key} = {value}")
             setattr(CONFIG, key, value)
+
+            if key == "database_modality":
+                modality_changed = True
+            elif key == "output_path":
+                output_path_overridden = True
+
+    # Keep derived paths in sync when database modality changes,
+    # but do not overwrite explicit CLI path overrides.
+    if modality_changed:
+        if not output_path_overridden:
+            CONFIG.output_path = f"data/{CONFIG.database_modality}_db.csv"
 
 def getenv(key: str) -> str:
     value = os.getenv(key)
     if not value:
         raise ValueError(f"Environment variable {key} is not set.")
     return value
+
+# de-duplicate by keeping oldest (identical title first, then identical name)
+def drop_duplicates(df, subset_col, sort_col="paper_year", df_removed=None):
+    # df = df.copy()
+    df_sorted = df.sort_values(sort_col, ascending=True)
+    dup_mask = df_sorted.duplicated(subset=[subset_col], keep="first")
+    df_kept = df_sorted[~dup_mask]
+    df_removed_tmp = df_sorted[dup_mask]
+    if df_removed is not None:
+        # df_removed = df_removed.copy()
+        df_removed = pd.concat([df_removed, df_removed_tmp], ignore_index=True)  # concatenate
+    else:
+        df_removed = df_removed_tmp
+    
+    logger.info(f"After de-duplication by {subset_col}, {len(df_kept)} unique datasets remain in the output.")
+
+    return df_kept, df_removed
 
 # -----------------------------
 # MAIN PIPELINE
@@ -112,7 +148,9 @@ async def main():
         ids = [id for id in ids if id not in pmids_existing]
         logger.info(f"After filtering out existing PMIDs, {len(ids)} new articles remain for extraction.")
     
-    get_year = CONFIG.citation_number_grace_period_years is not None and math.floor(CONFIG.citation_number_grace_period_years) > 0
+    if CONFIG.citation_number_grace_period_years is None:
+        CONFIG.citation_number_grace_period_years = 0
+    get_year = math.floor(CONFIG.citation_number_grace_period_years) > 0
     if get_year:
         citation_counts_by_pmid, year_results = fetch_pubmed_citation_counts(ids, get_year=True)
     else:
@@ -127,6 +165,7 @@ async def main():
         for id in ids:
             year = year_results.get(id)
             if year is None:
+                filtered_ids.append(id)  # if we can't get the year, be generous and keep the paper for extraction, since we can't apply the citation filter without the year
                 continue
 
             citations = citation_counts_by_pmid.get(id, 0)
@@ -148,6 +187,7 @@ async def main():
         logger.warning("No articles found.")
         return
 
+    check_dataset_is_available = False
     extracted_datasets: List[BaseModel] = []
     failed_metadata = []
     for article in tqdm(articles):
@@ -164,20 +204,33 @@ async def main():
             for _ in range(CONFIG.num_tries_agent):
                 if CONFIG.database_modality == "radiology":
                     dataset = await extract_radiology_dataset_info_with_agent(title, abstract, publication_metadata)
+                elif CONFIG.database_modality == "scrnaseq":
+                    dataset = await extract_scrnaseq_dataset_info_with_agent(title, abstract, publication_metadata)
+                elif CONFIG.database_modality == "bulk_genomics":
+                    dataset = await extract_bulk_genomics_dataset_info_with_agent(title, abstract, publication_metadata)
+                elif CONFIG.database_modality == "spatial_transcriptomics":
+                    dataset = await extract_spatial_transcriptomics_dataset_info_with_agent(title, abstract, publication_metadata)
                 #* add additional modalities here with corresponding extraction functions, e.g. genomics, pathology, etc
                 else:
-                    raise ValueError(f"Unsupported database modality: {CONFIG.database_modality}. Supported modalities: radiology.")
+                    raise ValueError(
+                        f"Unsupported database modality: {CONFIG.database_modality}. Supported modalities: {SUPPORTED_MODALITIES}."
+                    )
                 if dataset is not None:
                     break
             
             if isinstance(dataset, BaseModel):
-                full_text = try_to_get_full_text(article)
-                dataset_is_available = check_if_dataset_is_available(title, abstract, full_text=full_text)
-                if dataset_is_available:
-                    extracted_datasets.append(dataset)
+                logger.debug(f"Extraction successful for article: {title}. Checking dataset availability...")
+                if check_dataset_is_available:
+                    full_text = None  # try_to_get_full_text(article)  # TODO: (1) write a function to extract just part of full text (eg just intro, methods, and data/code availability) and convert from byte --> str, and (2) determine what to do if full text not available (perhaps skip entirely?)
+                    dataset_is_available = await check_if_dataset_is_available(title, abstract, full_text=full_text)
+                    if dataset_is_available:
+                        logger.debug(f"Dataset described in article appears to be publicly available, adding to output: {title}")
+                        extracted_datasets.append(dataset)
+                    else:
+                        logger.debug(f"Dataset described in article is not currently available, skipping: {title}")
+                        failed_metadata.append(publication_metadata)
                 else:
-                    logger.debug(f"Dataset described in article is not currently available, skipping: {title}")
-                    failed_metadata.append(publication_metadata)
+                    extracted_datasets.append(dataset)
             else:
                 logger.debug(f"Extraction failed for article: {title}")
                 failed_metadata.append(publication_metadata)
@@ -187,21 +240,20 @@ async def main():
         except KeyboardInterrupt:
             logger.error("\nInterrupted — exiting loop early.")
             break
+        except Exception as e:
+            logger.error(f"Error processing article with title: {title}. Error: {e}")
+            failed_metadata.append(publication_metadata)
+            continue
 
     # Convert extracted datasets → dict rows
     rows = [d.model_dump() for d in extracted_datasets]
     new_df = pd.DataFrame(rows)
-
-    # de-duplicate by keeping oldest (identical title first, then identical name)
-    new_df = new_df.sort_values("paper_year", ascending=True).drop_duplicates(subset=["title"], keep="first")
-    new_df = new_df.sort_values("paper_year", ascending=True).drop_duplicates(subset=["name"], keep="first")
 
     logger.info(f"Extracted {len(new_df)} datasets from {len(articles)} articles.")
     logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
 
     # add column to isolate mesh terms in pubmed query
     if "pubmed_matches" in new_df.columns:
-        breakpoint()
         new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
     
     # check if link works
@@ -221,7 +273,19 @@ async def main():
     if df is None or df.empty:
         df = new_df
     else:
+        logger.info(f"Existing output file has {len(df)} datasets. Combining with {len(new_df)} newly extracted datasets.")
         df = pd.concat([df, new_df], ignore_index=True)
+        logger.info(f"Combined with existing data, there are now {len(df)} total datasets.")
+    
+    df, _ = drop_duplicates(df, subset_col="paper_title", sort_col="paper_year")
+    df, df_removed = drop_duplicates(df, subset_col="name", sort_col="paper_year", df_removed=None)
+
+    if len(df_removed) > 0:
+        removed_dict = df_removed.to_dict(orient="records")
+        # failed_metadata_entry_keys = failed_metadata[0].keys() if failed_metadata else []
+        for entry in removed_dict:
+            failed_metadata.append({k: v for k, v in entry.items()})  #  if k in failed_metadata_entry_keys})
+    logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
 
     # Save to CSV
     df.to_csv(CONFIG.output_path, index=False)

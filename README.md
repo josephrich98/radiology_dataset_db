@@ -30,7 +30,7 @@ python -m vllm.entrypoints.openai.api_server \
 ### 2. Set up the radiology dataset database environment
 
 ```bash
-git clone git@github.com:josephrich98/radiology_dataset_db.git
+git clone git@github.com:pachterlab/radiology_dataset_db.git
 cd radiology_dataset_db
 conda create -n radiology_dataset_db python=3.10 -y
 conda activate radiology_dataset_db
@@ -51,6 +51,11 @@ python scripts/build_db.py
 3. Import and call the new extraction function in `scripts/build_db.py` and add a conditional to check the modality type
 4. Optionally, update .github/workflows/update_dbs.yml to run the pipeline for the new modality on a schedule
 All instructions are notaded in the code with comments like `#* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc`
+
+Example codex prompt used to add a scRNA-seq dataset schema and extraction function:
+```text
+Pleas write a module very similar to extract_radiology_dataset_information_llm.py called extract_scrnaseq_dataset_information_llm.py that looks for scRNA-seq/snRNA-seq data. It should look for name, num_patients, sequencing_technology (eg 10X, SMARTSEQ, Parse, etc), disease, species, tissue, cell/nuclei. Also have fields for paper_title, paper_link, paper_year etc that get populated afterwards. Add instructions in config.py, and add an extra condition to build_db.py (areas to edit are marked by "#*")
+```
 
 ## Testing
 ### Just unit tests:

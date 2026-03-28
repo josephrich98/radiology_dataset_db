@@ -141,6 +141,7 @@ dmypy.json
 
 # VScode
 **/.vscode/*
+.codex
 
 # mdbook documentation
 /docs/book/

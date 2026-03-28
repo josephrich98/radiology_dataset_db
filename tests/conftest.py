@@ -263,19 +263,7 @@ def _paper_ground_truth():
         "merlin": {
             "title": "Merlin: a computed tomography vision-language foundation model and dataset",
             "abstract": (
-                "The National Institutes of Health have placed significant emphasis on sharing of research data to "
-                "support secondary research. Investigators have been encouraged to publish their clinical and imaging "
-                "data as part of fulfilling their grant obligations. Realizing it was not sufficient to merely ask "
-                "investigators to publish their collection of imaging and clinical data, the National Cancer Institute "
-                "(NCI) created the open source National Biomedical Image Archive software package as a mechanism for "
-                "centralized hosting of cancer related imaging. NCI has contracted with Washington University in Saint "
-                "Louis to create The Cancer Imaging Archive (TCIA)-an open-source, open-access information resource to "
-                "support research, development, and educational initiatives utilizing advanced medical imaging of cancer. "
-                "In its first year of operation, TCIA accumulated 23 collections (3.3 million images). Operating and "
-                "maintaining a high-availability image archive is a complex challenge involving varied archive-specific "
-                "resources and driven by the needs of both image submitters and image consumers. Quality archives of any "
-                "type (traditional library, PubMed, refereed journals) require management and customer service. This paper "
-                "describes the management tasks and user support model for TCIA."
+                "The large volume of abdominal computed tomography (CT) scans coupled with the shortage of radiologists have intensified the need for automated medical image analysis tools. Previous state-of-the-art approaches for automated analysis leverage vision–language models (VLMs) that jointly model images and radiology reports. However, current medical VLMs are generally limited to 2D images and short reports. Here to overcome these shortcomings for abdominal CT interpretation, we introduce Merlin, a 3D VLM that learns from volumetric CT scans, electronic health record data and radiology reports. This approach is enabled by a multistage pretraining framework that does not require additional manual annotations. We trained Merlin using a high-quality clinical dataset of paired CT scans (>6 million images from 15,331 CT scans), diagnosis codes (>1.8 million codes) and radiology reports (>6 million tokens). We comprehensively evaluated Merlin on 6 task types and 752 individual tasks that covered diagnostic, prognostic and quality-related tasks. The non-adapted (off-the-shelf) tasks included zero-shot classification of findings (30 findings), phenotype classification (692 phenotypes) and zero-shot cross-modal retrieval (image-to-findings and image-to-impression). The model-adapted tasks included 5-year chronic disease prediction (6 diseases), radiology report generation and 3D semantic segmentation (20 organs). We validated Merlin at scale, with internal testing on 5,137 CT scans and external testing on 44,098 CT scans from 3 independent sites and 2 public datasets. The results demonstrated high generalization across institutions and anatomies. Merlin outperformed 2D VLMs, CT foundation models and off-the-shelf radiology models. We also computed scaling laws and conducted ablation studies to identify optimal training strategies. We release our trained models, code and dataset for 25,494 pairs of abdominal CT scans and radiology reports. Our results demonstrate how Merlin may assist in the interpretation of abdominal CT scans and mitigate the burden on radiologists while simultaneously adding value for future biomarker discovery and disease risk stratification."
             ),
             "link": "https://doi.org/10.1038/s41586-026-10181-8",
             "date": "04-March-2026",

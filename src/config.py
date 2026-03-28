@@ -74,7 +74,7 @@ CLASSIFICATION_AGENT_INSTRUCTIONS = "Classify whether this paper creates a datas
 DATASET_AVAILABILITY_INSTRUCTIONS = (
     "Determine whether the paper indicates that its dataset is publicly available.\n"
     "Return is_publicly_available = true if there is direct evidence in the provided text such as:\n"
-    "- explicit language like 'open', 'publicly available', 'public', 'available', or a data availability statement\n"
+    "- explicit language like 'open', 'publicly available', 'public', 'available', 'release', or a data availability statement\n"
     "- a non-DOI URL (e.g., GitHub, Zenodo, institutional repository, challenge site, or dataset website)\n"
     "- wording that readers can access or download the dataset\n\n"
     "Return false if:\n"
@@ -82,7 +82,7 @@ DATASET_AVAILABILITY_INSTRUCTIONS = (
     "- access is restricted, private, proprietary, or behind an application process\n"
     "- only a DOI to the paper is provided without dataset access evidence\n"
     "- there is no clear evidence of public dataset availability\n\n"
-    "Use title, abstract, and full text (if provided). Be conservative: if unsure, return false."
+    "Use title, abstract, and full text (if provided). Be generous, especially if full text is not provided: if unsure, return true."
 )
 
 DATASET_AVAILABILITY_AGENT_INSTRUCTIONS = (
@@ -125,3 +125,72 @@ IDS_TO_KEEP = None
 # }
 
 #* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc
+
+#* extract_scrnaseq_dataset_information_llm.py
+EXTRACTION_INSTRUCTIONS_SCRNASEQ = (
+    "You MUST extract a dataset name.\n"
+    "Never return null for name.\n"
+    "If uncertain, choose the most likely dataset or cohort name.\n"
+    "Prefer names in the title.\n"
+    "This extractor is for scRNA-seq/snRNA-seq dataset papers.\n"
+)
+
+ADD_TEXT_EXTRACT_SCRNASEQ = f"""
+Extract:
+- dataset name (best candidate; often found directly in the title)
+- number of patients or participants
+- sequencing technology/platform (e.g., 10X, SMART-Seq/SMARTSEQ, Parse, Drop-seq, inDrops, Seq-Well)
+- disease(s)
+- species
+- tissue(s)
+- whether the assay is cell, nuclei, or both (for scRNA-seq/snRNA-seq)
+- the http link to the dataset, if available at the end of the abstract
+"""
+
+EXTRACTION_AGENT_INSTRUCTIONS_SCRNASEQ = "Extract scRNA-seq/snRNA-seq dataset information"
+
+#* extract_bulk_genomics_dataset_information_llm.py
+EXTRACTION_INSTRUCTIONS_BULK_GENOMICS = (
+    "You MUST extract a dataset name.\n"
+    "Never return null for name.\n"
+    "If uncertain, choose the most likely dataset or cohort name.\n"
+    "Prefer names in the title.\n"
+    "This extractor is for bulk genomics dataset papers.\n"
+)
+
+ADD_TEXT_EXTRACT_BULK_GENOMICS = f"""
+Extract:
+- dataset name (best candidate; often found directly in the title)
+- number of patients or participants
+- sequencing modality/modality labels from: WGS, WXS, bulk RNA
+- whether raw reads are available (true/false if evidence is present)
+- disease(s)
+- species
+- tissue(s)
+- the http link to the dataset, if available at the end of the abstract
+"""
+
+EXTRACTION_AGENT_INSTRUCTIONS_BULK_GENOMICS = "Extract bulk genomics dataset information"
+
+#* extract_spatial_transcriptomics_dataset_information_llm.py
+EXTRACTION_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = (
+    "You MUST extract a dataset name.\n"
+    "Never return null for name.\n"
+    "If uncertain, choose the most likely dataset or cohort name.\n"
+    "Prefer names in the title.\n"
+    "This extractor is for spatial transcriptomics dataset papers.\n"
+)
+
+ADD_TEXT_EXTRACT_SPATIAL_TRANSCRIPTOMICS = f"""
+Extract:
+- dataset name (best candidate; often found directly in the title)
+- number of patients or participants
+- spatial transcriptomics technology/platform (e.g., Visium, Visium HD, Xenium, CosMx, MERFISH, seqFISH, Stereo-seq, Slide-seq, GeoMx DSP)
+- disease(s)
+- species
+- tissue(s)
+- whether the assay is cell, nuclei, or both
+- the http link to the dataset, if available at the end of the abstract
+"""
+
+EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = "Extract spatial transcriptomics dataset information"

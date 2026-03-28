@@ -40,7 +40,8 @@ dependencies = [
     "transformers",
     "accelerate",
     "pandas",
-    "matplotlib"
+    "matplotlib",
+    "lmxl"
 ]
 
 [project.urls]
