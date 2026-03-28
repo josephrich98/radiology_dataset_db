@@ -39,7 +39,10 @@ pip install -e .
 ### 3. Rename `.env_sample` to `.env` and fill in your Entrez email and API key (optional but recommended for higher rate limits)
 
 ## 🚀 Usage
+Modify .env and `src/config.py` as needed to customize PubMed query, LLM settings, and output paths. Then run:
+```bash
 python scripts/build_db.py
+```
 
 ## To add more modalities (e.g., genomics, pathology):
 1. Define new dataset schema and extraction instructions in `src/config.py`
