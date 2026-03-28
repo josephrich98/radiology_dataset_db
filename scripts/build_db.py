@@ -140,6 +140,77 @@ def drop_duplicates(df, subset_col, sort_col="paper_year", df_removed=None):
 
     return df_kept, df_removed
 
+
+def save_progress(args, df_existing, extracted_datasets: List[BaseModel], failed_metadata: list, total_articles: int):
+    # Convert extracted datasets -> dict rows
+    rows = [d.model_dump() for d in extracted_datasets]
+    new_df = pd.DataFrame(rows)
+
+    logger.info(f"Extracted {len(new_df)} datasets from {total_articles} articles processed/fetched.")
+    logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
+
+    if new_df.empty and (df_existing is None or df_existing.empty):
+        logger.info("No new or existing datasets to write; skipping output CSV save.")
+        if args.output_path_failed and args.output_path_failed != "None" and len(failed_metadata) > 0:
+            df_failed = pd.DataFrame(failed_metadata)
+            df_failed.to_csv(args.output_path_failed, index=False)
+            logger.info(f"Failed extraction metadata saved to {args.output_path_failed}")
+        return
+
+    # add column to isolate mesh terms in pubmed query
+    if "pubmed_matches" in new_df.columns:
+        new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
+
+    # check if link works
+    if "dataset_link" in new_df.columns:
+        new_df["link_works"] = new_df["dataset_link"].apply(check_url)
+        link_works_col = new_df.pop("link_works")  # place this column right after dataset_link column
+        new_df.insert(new_df.columns.get_loc("dataset_link") + 1, "link_works", link_works_col)
+
+    if not new_df.empty:
+        new_df["date_added"] = pd.Timestamp.now().isoformat()
+
+        # convert list fields to comma-separated strings for CSV output
+        cols_to_skip_joining = {"pubmed_matches"}
+        for col in new_df.columns:
+            if not new_df[col].empty and isinstance(new_df[col].iloc[0], list) and col not in cols_to_skip_joining:
+                new_df[col] = new_df[col].apply(lambda x: ",".join(x) if isinstance(x, list) else x)
+
+    if df_existing is None or df_existing.empty:
+        df = new_df
+    else:
+        if not new_df.empty:
+            logger.info(f"Existing output file has {len(df_existing)} datasets. Combining with {len(new_df)} newly extracted datasets.")
+            df = pd.concat([df_existing, new_df], ignore_index=True)
+            logger.info(f"Combined with existing data, there are now {len(df)} total datasets.")
+        else:
+            df = df_existing
+
+    if "paper_title" in df.columns:
+        df, _ = drop_duplicates(df, subset_col="paper_title", sort_col="paper_year")
+
+    if "name" in df.columns:
+        df, df_removed = drop_duplicates(df, subset_col="name", sort_col="paper_year", df_removed=None)
+        if len(df_removed) > 0:
+            removed_dict = df_removed.to_dict(orient="records")
+            for entry in removed_dict:
+                failed_metadata.append({k: v for k, v in entry.items()})
+
+    logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
+
+    # Save to CSV
+    df.to_csv(args.output_path, index=False)
+
+    if args.output_path_failed and args.output_path_failed != "None":  # catch "None" string from env var
+        if len(failed_metadata) == 0:
+            logger.info("No failed extractions to save.")
+        else:
+            df_failed = pd.DataFrame(failed_metadata)
+            df_failed.to_csv(args.output_path_failed, index=False)
+            logger.info(f"Failed extraction metadata saved to {args.output_path_failed}")
+
+    logger.info(f"Extraction complete. Results saved to {args.output_path}")
+
 # -----------------------------
 # MAIN PIPELINE
 # -----------------------------
@@ -234,114 +305,81 @@ async def main():
     check_dataset_is_available = False
     extracted_datasets: List[BaseModel] = []
     failed_metadata = []
+    interrupted = False
     if args.threads < 1:
         raise ValueError("threads must be >= 1")
 
-    if args.threads == 1:
-        for article in tqdm(articles):
-            publication_metadata = {}
-            title = None
-            try:
-                publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
-                title = publication_metadata.get("title")
+    try:
+        if args.threads == 1:
+            for article in tqdm(articles):
+                publication_metadata = {}
+                title = None
+                try:
+                    publication_metadata = extract_pubmed_metadata(article, citation_counts_by_pmid, pubmed_query=PUBMED_QUERY)
+                    title = publication_metadata.get("title")
 
-                if title and title in titles_existing:
-                    logger.debug(f"Article title already exists in output, skipping: {title}")
+                    if title and title in titles_existing:
+                        logger.debug(f"Article title already exists in output, skipping: {title}")
+                        continue
+
+                    dataset, failure = await process_publication_metadata(publication_metadata, check_dataset_is_available, args)
+                    if dataset is not None:
+                        extracted_datasets.append(dataset)
+                    elif failure is not None:
+                        failed_metadata.append(failure)
+
+                    await asyncio.sleep(1)  # rate limit for single-threaded mode
+
+                except KeyboardInterrupt:
+                    interrupted = True
+                    logger.warning("Interrupted during processing loop. Saving partial progress...")
+                    break
+                except Exception as e:
+                    logger.error(f"Error processing article with title: {title}. Error: {e}")
+                    failed_metadata.append(publication_metadata)
                     continue
-
-                dataset, failure = await process_publication_metadata(publication_metadata, check_dataset_is_available, args)
-                if dataset is not None:
-                    extracted_datasets.append(dataset)
-                elif failure is not None:
-                    failed_metadata.append(failure)
-
-                await asyncio.sleep(1)  # rate limit for single-threaded mode
-
-            except KeyboardInterrupt:
-                logger.error("\nInterrupted — exiting loop early.")
-                break
-            except Exception as e:
-                logger.error(f"Error processing article with title: {title}. Error: {e}")
-                failed_metadata.append(publication_metadata)
-                continue
-    else:
-        logger.info(f"Using multithreaded extraction with {args.threads} threads.")
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=args.threads) as executor:
-            tasks = [
-                loop.run_in_executor(
-                    executor,
-                    process_article_threaded,
-                    article,
-                    citation_counts_by_pmid,
-                    titles_existing,
-                    check_dataset_is_available,
-                    args,
-                )
-                for article in articles
-            ]
-            for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-                dataset, failure = await task
-                if dataset is not None:
-                    extracted_datasets.append(dataset)
-                elif failure is not None:
-                    failed_metadata.append(failure)
-
-    # Convert extracted datasets → dict rows
-    rows = [d.model_dump() for d in extracted_datasets]
-    new_df = pd.DataFrame(rows)
-
-    logger.info(f"Extracted {len(new_df)} datasets from {len(articles)} articles.")
-    logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
-
-    # add column to isolate mesh terms in pubmed query
-    if "pubmed_matches" in new_df.columns:
-        new_df = add_column_to_isolate_mesh_terms_from_pubmed_matches(new_df, source_column="pubmed_matches")
-    
-    # check if link works
-    if "dataset_link" in new_df.columns:
-        new_df["link_works"] = new_df["dataset_link"].apply(check_url)
-        link_works_col = new_df.pop("link_works")  # place this column right after dataset_link column
-        new_df.insert(new_df.columns.get_loc("dataset_link") + 1, "link_works", link_works_col)
-
-    new_df["date_added"] = pd.Timestamp.now().isoformat()
-    
-    # convert list fields to comma-separated strings for CSV output
-    cols_to_skip_joining = {"pubmed_matches"}
-    for col in new_df.columns:
-        if not new_df[col].empty and isinstance(new_df[col].iloc[0], list) and col not in cols_to_skip_joining:
-            new_df[col] = new_df[col].apply(lambda x: ",".join(x) if isinstance(x, list) else x)
-    
-    if df is None or df.empty:
-        df = new_df
-    else:
-        logger.info(f"Existing output file has {len(df)} datasets. Combining with {len(new_df)} newly extracted datasets.")
-        df = pd.concat([df, new_df], ignore_index=True)
-        logger.info(f"Combined with existing data, there are now {len(df)} total datasets.")
-    
-    df, _ = drop_duplicates(df, subset_col="paper_title", sort_col="paper_year")
-    df, df_removed = drop_duplicates(df, subset_col="name", sort_col="paper_year", df_removed=None)
-
-    if len(df_removed) > 0:
-        removed_dict = df_removed.to_dict(orient="records")
-        # failed_metadata_entry_keys = failed_metadata[0].keys() if failed_metadata else []
-        for entry in removed_dict:
-            failed_metadata.append({k: v for k, v in entry.items()})  #  if k in failed_metadata_entry_keys})
-    logger.info(f"Failed to extract datasets from {len(failed_metadata)} articles.")
-
-    # Save to CSV
-    df.to_csv(args.output_path, index=False)
-
-    if args.output_path_failed and args.output_path_failed != "None":  # catch "None" string from env var
-        if len(failed_metadata) == 0:
-            logger.info("No failed extractions to save.")
         else:
-            df_failed = pd.DataFrame(failed_metadata)
-            df_failed.to_csv(args.output_path_failed, index=False)
-            logger.info(f"Failed extraction metadata saved to {args.output_path_failed}")
-
-    logger.info(f"Extraction complete. Results saved to {args.output_path}")
+            logger.info(f"Using multithreaded extraction with {args.threads} threads.")
+            loop = asyncio.get_running_loop()
+            executor = ThreadPoolExecutor(max_workers=args.threads)
+            tasks = []
+            try:
+                tasks = [
+                    loop.run_in_executor(
+                        executor,
+                        process_article_threaded,
+                        article,
+                        citation_counts_by_pmid,
+                        titles_existing,
+                        check_dataset_is_available,
+                        args,
+                    )
+                    for article in articles
+                ]
+                for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
+                    dataset, failure = await task
+                    if dataset is not None:
+                        extracted_datasets.append(dataset)
+                    elif failure is not None:
+                        failed_metadata.append(failure)
+            except KeyboardInterrupt:
+                interrupted = True
+                logger.warning("Interrupted during threaded processing. Cancelling pending work and saving partial progress...")
+                for task in tasks:
+                    task.cancel()
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        interrupted = True
+        logger.warning("Interrupted while awaiting main task. Saving partial progress...")
+    finally:
+        save_progress(args, df, extracted_datasets, failed_metadata, total_articles=len(articles))
+        if interrupted:
+            logger.warning("Partial progress has been saved after interrupt.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.warning("Received KeyboardInterrupt at process level; exiting.")
