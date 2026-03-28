@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 
-from src.config import (CLASSIFICATION_AGENT_INSTRUCTIONS,
+from radiology_dataset_db.config import (CLASSIFICATION_AGENT_INSTRUCTIONS,
                         CLASSIFICATION_INSTRUCTIONS, LOG_LEVEL, MODEL)
 
 logger = logging.getLogger(__name__)

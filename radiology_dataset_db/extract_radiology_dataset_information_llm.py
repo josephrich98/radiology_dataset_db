@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_ai import Agent, RunContext
 
-from src.config import (ADD_TEXT_EXTRACT, EXTRACTION_AGENT_INSTRUCTIONS,
+from radiology_dataset_db.config import (ADD_TEXT_EXTRACT, EXTRACTION_AGENT_INSTRUCTIONS,
                         EXTRACTION_INSTRUCTIONS, LOG_LEVEL, MODEL)
-from src.extraction_utils import (
+from radiology_dataset_db.extraction_utils import (
     DatasetWithPaperMetadata,
     ExtractionDeps,
     run_dataset_extraction_with_common_logic,

@@ -6,14 +6,14 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_ai import Agent, RunContext
 
-from src.config import (
+from radiology_dataset_db.config import (
     ADD_TEXT_EXTRACT_BULK_GENOMICS,
     EXTRACTION_AGENT_INSTRUCTIONS_BULK_GENOMICS,
     EXTRACTION_INSTRUCTIONS_BULK_GENOMICS,
     LOG_LEVEL,
     MODEL,
 )
-from src.extraction_utils import (
+from radiology_dataset_db.extraction_utils import (
     DatasetWithPaperMetadata,
     ExtractionDeps,
     run_dataset_extraction_with_common_logic,

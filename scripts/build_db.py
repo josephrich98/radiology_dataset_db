@@ -11,11 +11,11 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from tqdm import tqdm
 
-from src.config import CONFIG, IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
+from radiology_dataset_db.config import CONFIG, IDS_TO_KEEP, LOG_LEVEL, MODEL, PUBMED_QUERY
 #* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc
-from src import extract_radiology_dataset_info_with_agent, extract_scrnaseq_dataset_info_with_agent, extract_bulk_genomics_dataset_info_with_agent, extract_spatial_transcriptomics_dataset_info_with_agent
-from src.check_if_dataset_is_available_llm import check_if_dataset_is_available
-from src.pubmed_utils import (
+from radiology_dataset_db import extract_bulk_genomics_dataset_info_with_agent, extract_radiology_dataset_info_with_agent, extract_scrnaseq_dataset_info_with_agent, extract_spatial_transcriptomics_dataset_info_with_agent
+from radiology_dataset_db.check_if_dataset_is_available_llm import check_if_dataset_is_available
+from radiology_dataset_db.pubmed_utils import (
     add_column_to_isolate_mesh_terms_from_pubmed_matches,
     extract_pubmed_metadata, fetch_pubmed_citation_counts,
     fetch_pubmed_details, search_pubmed, try_to_get_full_text, check_url)

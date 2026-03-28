@@ -4,7 +4,12 @@ import os
 
 import pytest
 
-from conftest import _paper_ground_truth, load_build_module
+from conftest import _paper_ground_truth
+
+module = pytest.importorskip(
+    "radiology_dataset_db.extract_radiology_dataset_information_llm",
+    reason="radiology_dataset_db extraction module dependencies are required",
+)
 
 def _build_dataset_from_truth(module, paper):
     expected = paper["expected"]
@@ -65,8 +70,7 @@ def _has_integration_dependencies():
 PAPER_KEYS = _paper_ground_truth().keys()  # eg ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia', 'merlin']
 
 @pytest.mark.parametrize("paper_key", PAPER_KEYS)
-def test_serialize_dataset_against_ground_truth(monkeypatch, paper_key):
-    module = load_build_module(monkeypatch)
+def test_serialize_dataset_against_ground_truth(paper_key):
     papers = _paper_ground_truth()
     paper = papers[paper_key]
 
@@ -82,13 +86,12 @@ NUM_TRIES_AGENT_TEST = 2  # I already loop internally, so this would only be to 
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.parametrize("paper_key", PAPER_KEYS)
-def test_extract_radiology_dataset_info_with_agent_integration(monkeypatch, paper_key):
+def test_extract_radiology_dataset_info_with_agent_integration(paper_key):
     if not (os.getenv("VLLM_PORT") or os.getenv("OPENAI_API_KEY")):
         pytest.skip("Integration test requires VLLM_PORT or OPENAI_API_KEY")
     if not _has_integration_dependencies():
         pytest.skip("Integration test requires dotenv, pydantic_ai, Bio, and pydantic")
 
-    module = load_build_module(monkeypatch, module_name="extract_radiology_dataset_information_llm", live=True)
     papers = _paper_ground_truth()
     paper = papers[paper_key]
 
@@ -116,4 +119,5 @@ def test_extract_radiology_dataset_info_with_agent_integration(monkeypatch, pape
     assert module.name_matches_title(dataset.name, title)
 
     normalized_name = _normalize_name(dataset.name)
+    name_aliases = paper.get("name_aliases", [paper_key])
     assert any(alias in normalized_name for alias in paper["name_aliases"])

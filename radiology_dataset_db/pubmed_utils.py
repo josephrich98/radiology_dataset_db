@@ -11,7 +11,7 @@ import pandas as pd
 from more_itertools import chunked
 from tqdm import tqdm
 
-from src.config import LOG_LEVEL
+from radiology_dataset_db.config import LOG_LEVEL
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)

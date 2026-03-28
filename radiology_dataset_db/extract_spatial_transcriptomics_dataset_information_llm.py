@@ -6,14 +6,14 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_ai import Agent, RunContext
 
-from src.config import (
-    ADD_TEXT_EXTRACT_SCRNASEQ,
-    EXTRACTION_AGENT_INSTRUCTIONS_SCRNASEQ,
-    EXTRACTION_INSTRUCTIONS_SCRNASEQ,
+from radiology_dataset_db.config import (
+    ADD_TEXT_EXTRACT_SPATIAL_TRANSCRIPTOMICS,
+    EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS,
+    EXTRACTION_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS,
     LOG_LEVEL,
     MODEL,
 )
-from src.extraction_utils import (
+from radiology_dataset_db.extraction_utils import (
     DatasetWithPaperMetadata,
     ExtractionDeps,
     run_dataset_extraction_with_common_logic,
@@ -32,13 +32,17 @@ load_dotenv()
 
 
 class SequencingTechnology(str, Enum):
-    TENX = "10X"
-    SMART_SEQ = "SMART-Seq/SMARTSEQ"
-    PARSE = "Parse"
-    DROP_SEQ = "Drop-seq"
-    IN_DROPS = "inDrops"
-    SEQ_WELL = "Seq-Well"
+    VISIUM = "Visium"
+    VISIUM_HD = "Visium HD"
+    XENIUM = "Xenium"
+    COSMX = "CosMx"
+    MERFISH = "MERFISH"
+    SEQFISH = "seqFISH"
+    STEREO_SEQ = "Stereo-seq"
+    SLIDE_SEQ = "Slide-seq"
+    GEOMX_DSP = "GeoMx DSP"
     OTHER = "other"
+
 
 class CellOrNuclei(str, Enum):
     CELL = "cell"
@@ -46,7 +50,7 @@ class CellOrNuclei(str, Enum):
     BOTH = "both"
 
 
-class ScRNASeqDataset(DatasetWithPaperMetadata):
+class SpatialTranscriptomicsDataset(DatasetWithPaperMetadata):
     num_patients: Optional[int] = None
     sequencing_technology: List[SequencingTechnology] = Field(default_factory=list)
     disease: List[str] = Field(default_factory=list)
@@ -58,8 +62,8 @@ class ScRNASeqDataset(DatasetWithPaperMetadata):
 dataset_agent = Agent(
     MODEL,
     deps_type=ExtractionDeps,
-    output_type=ScRNASeqDataset,
-    instructions=EXTRACTION_INSTRUCTIONS_SCRNASEQ,
+    output_type=SpatialTranscriptomicsDataset,
+    instructions=EXTRACTION_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS,
 )
 
 
@@ -70,17 +74,17 @@ Text:
 Title: {ctx.deps.title}
 Abstract: {ctx.deps.abstract}
 
-{ADD_TEXT_EXTRACT_SCRNASEQ}
+{ADD_TEXT_EXTRACT_SPATIAL_TRANSCRIPTOMICS}
 """
 
 
-def serialize_dataset_output(dataset: Union[ScRNASeqDataset, str]) -> str:
-    if isinstance(dataset, ScRNASeqDataset):
+def serialize_dataset_output(dataset: Union[SpatialTranscriptomicsDataset, str]) -> str:
+    if isinstance(dataset, SpatialTranscriptomicsDataset):
         return dataset.model_dump_json(indent=4)
     return str(dataset)
 
 
-async def extract_scrnaseq_dataset_info_with_agent(
+async def extract_spatial_transcriptomics_dataset_info_with_agent(
     title: str,
     abstract: str,
     publication_metadata: Optional[dict] = None,
@@ -90,7 +94,7 @@ async def extract_scrnaseq_dataset_info_with_agent(
         abstract=abstract,
         publication_metadata=publication_metadata,
         dataset_agent=dataset_agent,
-        agent_instructions=EXTRACTION_AGENT_INSTRUCTIONS_SCRNASEQ,
-        output_model=ScRNASeqDataset,
+        agent_instructions=EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS,
+        output_model=SpatialTranscriptomicsDataset,
         logger=logger,
     )

@@ -11,6 +11,16 @@ load_dotenv()
 
 LOG_LEVEL = logging.DEBUG  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+#$ for real time, set to None
+IDS_TO_KEEP = None
+IDS_TO_KEEP = {
+    "36204533",  # RadImageNet
+    "31831740",  # MIMIC-CXR
+    "32457287",  # UK Biobank
+    "23884657",  # TCIA
+    "41781626",  # Merlin
+}
+
 @dataclass
 class Config:
     database_modality: str = "radiology"  # e.g. radiology, genomics, pathology, etc
@@ -114,18 +124,6 @@ Extract:
 
 EXTRACTION_AGENT_INSTRUCTIONS = "Extract dataset information"
 
-#$ for real time, set to None
-IDS_TO_KEEP = None
-# IDS_TO_KEEP = {
-#     "36204533",  # RadImageNet
-#     "31831740",  # MIMIC-CXR
-#     "32457287",  # UK Biobank
-#     "23884657",  # TCIA
-#     "41781626",  # Merlin
-# }
-
-#* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc
-
 #* extract_scrnaseq_dataset_information_llm.py
 EXTRACTION_INSTRUCTIONS_SCRNASEQ = (
     "You MUST extract a dataset name.\n"
@@ -194,3 +192,5 @@ Extract:
 """
 
 EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = "Extract spatial transcriptomics dataset information"
+
+#* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc

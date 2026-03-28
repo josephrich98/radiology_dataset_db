@@ -4,7 +4,7 @@ from typing import Optional, Type
 
 from pydantic import BaseModel, Field
 
-from src.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
+from radiology_dataset_db.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
 
 
 class DatasetWithPaperMetadata(BaseModel):

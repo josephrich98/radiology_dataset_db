@@ -2,9 +2,17 @@ import os
 from datetime import datetime
 import pytest
 
-from conftest import _paper_ground_truth, _paper_irrelevant, load_build_module
+from conftest import _paper_ground_truth, _paper_irrelevant
 
 Entrez = pytest.importorskip("Bio.Entrez", reason="biopython is required for Entrez tests")
+config_module = pytest.importorskip(
+    "radiology_dataset_db.config",
+    reason="radiology_dataset_db config module dependencies are required",
+)
+pubmed_utils_module = pytest.importorskip(
+    "radiology_dataset_db.pubmed_utils",
+    reason="radiology_dataset_db pubmed utils dependencies are required",
+)
 
 # keys from _paper_ground_truth that should resolve to DOI-backed papers
 EXPECTED_PAPERS = (
@@ -93,7 +101,7 @@ def _perform_pubmed_search(module, query, max_results=9999, expected_dois=None, 
             f"Found DOI(s): {sorted(found_dois)}"
         )
 
-def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=None, expect_presence=True):
+def _assert_entrez_for_expected_dois(expected_dois, expected_dates=None, expect_presence=True):
     entrez_email = os.getenv("ENTREZ_EMAIL")
     if not entrez_email:
         pytest.skip("ENTREZ_EMAIL is required for live Entrez tests")
@@ -102,19 +110,6 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
     if os.getenv("ENTREZ_API_KEY"):
         print("Using Entrez API key from environment variable for test.")
         Entrez.api_key = os.getenv("ENTREZ_API_KEY")
-
-    config_module = load_build_module(
-        monkeypatch,
-        module_name="config",
-        live=True,
-        skip_on_missing_dependency=True,
-    )
-    pubmed_utils_module = load_build_module(
-        monkeypatch,
-        module_name="pubmed_utils",
-        live=True,
-        skip_on_missing_dependency=True,
-    )
 
     query = config_module.PUBMED_QUERY
 
@@ -132,7 +127,7 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_entrez_search_contains_expected_paper_dois(monkeypatch):
+def test_entrez_search_contains_expected_paper_dois():
     papers = _paper_ground_truth()
 
     expected_papers = EXPECTED_PAPERS
@@ -141,11 +136,11 @@ def test_entrez_search_contains_expected_paper_dois(monkeypatch):
 
     expected_dois = _collect_expected_dois(papers, expected_papers)
     expected_dates = _collect_expected_dates(papers, expected_papers)
-    _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=expected_dates, expect_presence=True)
+    _assert_entrez_for_expected_dois(expected_dois, expected_dates=expected_dates, expect_presence=True)
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_entrez_search_absent_for_irrelevant_paper_dois(monkeypatch):
+def test_entrez_search_absent_for_irrelevant_paper_dois():
     papers = _paper_irrelevant()
 
     expected_papers = EXPECTED_IRRELEVANT_PAPERS
@@ -154,4 +149,4 @@ def test_entrez_search_absent_for_irrelevant_paper_dois(monkeypatch):
 
     expected_dois = _collect_expected_dois(papers, expected_papers)
     expected_dates = _collect_expected_dates(papers, expected_papers)
-    _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=expected_dates, expect_presence=False)
+    _assert_entrez_for_expected_dois(expected_dois, expected_dates=expected_dates, expect_presence=False)
