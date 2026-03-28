@@ -62,7 +62,7 @@ def _has_integration_dependencies():
 
     return True
 
-PAPER_KEYS = ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia']  # _paper_ground_truth().keys()  # eg ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia', 'merlin']
+PAPER_KEYS = _paper_ground_truth().keys()  # eg ['radimagenet', 'mimic_cxr', 'uk_biobank', 'tcia', 'merlin']
 
 @pytest.mark.parametrize("paper_key", PAPER_KEYS)
 def test_serialize_dataset_against_ground_truth(monkeypatch, paper_key):
@@ -88,7 +88,7 @@ def test_extract_radiology_dataset_info_with_agent_integration(monkeypatch, pape
     if not _has_integration_dependencies():
         pytest.skip("Integration test requires dotenv, pydantic_ai, Bio, and pydantic")
 
-    module = load_build_module(monkeypatch, module_name="build_db_live_under_test", live=True)
+    module = load_build_module(monkeypatch, module_name="extract_radiology_dataset_information_llm", live=True)
     papers = _paper_ground_truth()
     paper = papers[paper_key]
 

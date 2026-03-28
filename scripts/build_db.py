@@ -75,8 +75,7 @@ async def main():
             os.remove(CONFIG.output_path)
             os.remove(CONFIG.output_path_failed) if CONFIG.output_path_failed and os.path.exists(CONFIG.output_path_failed) else None
         else:
-            logger.info(f"Output file {CONFIG.output_path} already exists. Set overwrite=True to overwrite it, or move/rename it before running the extraction. This will append to it but not replace existing lines, so you may get duplicates if you run multiple times without changing the output path.")
-            return
+            logger.info(f"Output file {CONFIG.output_path} already exists. Will write on top of it. To overwrite instead, set overwrite=True or remove the existing file before running.")
     else:
         logger.info(f"No existing output file found at {CONFIG.output_path}. A new file will be created.")
 
@@ -121,8 +120,8 @@ async def main():
         year_results = {}
 
     if CONFIG.min_citations > 0:
-        current_time = pd.Timestamp.now()
-        threshold_year = current_time - math.floor(CONFIG.citation_number_grace_period_years)
+        current_year = pd.Timestamp.now().year
+        threshold_year = current_year - math.floor(CONFIG.citation_number_grace_period_years)
         
         filtered_ids = []
         for id in ids:

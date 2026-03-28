@@ -103,18 +103,24 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
         print("Using Entrez API key from environment variable for test.")
         Entrez.api_key = os.getenv("ENTREZ_API_KEY")
 
-    module = load_build_module(
+    config_module = load_build_module(
         monkeypatch,
-        module_name="build_db_entrez_test",
+        module_name="config",
+        live=True,
+        skip_on_missing_dependency=True,
+    )
+    pubmed_utils_module = load_build_module(
+        monkeypatch,
+        module_name="pubmed_utils",
         live=True,
         skip_on_missing_dependency=True,
     )
 
-    query = module.PUBMED_QUERY
+    query = config_module.PUBMED_QUERY
 
     if expected_dates is None:  # search for all one time
         print("Doing single Entrez search without date filtering for expected DOIs.")
-        _perform_pubmed_search(module, query, expected_dois=expected_dois, expect_presence=expect_presence)
+        _perform_pubmed_search(pubmed_utils_module, query, expected_dois=expected_dois, expect_presence=expect_presence)
         
     else:
         print("Doing Entrez searches with date filtering for expected DOIs.")
@@ -122,7 +128,7 @@ def _assert_entrez_for_expected_dois(monkeypatch, expected_dois, expected_dates=
             date_query = f"{expected_date}[PDAT]" if expected_date else ""
             specific_query = f"{query} AND {date_query}" if date_query else query
 
-            _perform_pubmed_search(module, specific_query, expected_dois=[expected_doi], expect_presence=expect_presence)
+            _perform_pubmed_search(pubmed_utils_module, specific_query, expected_dois=[expected_doi], expect_presence=expect_presence)
 
 @pytest.mark.integration
 @pytest.mark.slow

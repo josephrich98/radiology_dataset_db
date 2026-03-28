@@ -112,7 +112,7 @@ def _remove_stubbed_modules():
 
 def load_build_module(
     monkeypatch,
-    module_name="build_database_under_test",
+    module_name="extract_radiology_dataset_information_llm",
     live=False,
     skip_on_missing_dependency=False,
 ):
@@ -123,7 +123,7 @@ def load_build_module(
         monkeypatch.setenv("ENTREZ_EMAIL", "unit-test@example.com")
         _install_dependency_stubs()
 
-    module_path = Path(__file__).resolve().parents[1] / "src" / "extract_radiology_dataset_information_llm.py"
+    module_path = Path(__file__).resolve().parents[1] / "src" / f"{module_name}.py"
 
     if module_name in sys.modules:
         del sys.modules[module_name]
@@ -136,7 +136,7 @@ def load_build_module(
         spec.loader.exec_module(module)
     except ModuleNotFoundError as exc:
         if skip_on_missing_dependency:
-            pytest.skip(f"extract_radiology_dataset_information_llm dependency missing: {exc.name}")
+            pytest.skip(f"{module_name} dependency missing: {exc.name}")
         raise
 
     sys.modules[module_name] = module
