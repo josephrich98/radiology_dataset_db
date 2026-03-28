@@ -2,8 +2,6 @@ import json
 import logging
 import os
 import subprocess
-from dataclasses import dataclass, field
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -21,21 +19,6 @@ IDS_TO_KEEP = None
 #     "41781626",  # Merlin
 # }
 
-@dataclass
-class Config:
-    database_modality: str = "radiology"  # e.g. radiology, genomics, pathology, etc
-    max_papers: Optional[int] = 9999  # None for all papers; set to small number for debugging
-    min_citations: int = 25  # filter out papers with fewer than this many citations (set to 0 to disable)
-    citation_number_grace_period_years: int = 1  # allow extra grace period for recent papers to accumulate citations - e.g., if set to 1 and the current year is 2026, then papers published in 2025 and 2026 will be exempt from the citation filter
-    num_tries_agent: int = 5
-    overwrite: bool = False
-
-    output_path: str = field(init=False)
-    output_path_failed: str = field(init=False)
-    def __post_init__(self):
-        self.output_path = f"data/{self.database_modality}_db.csv"
-        self.output_path_failed = None  # f"data/{self.database_modality}_db_failed.csv"
-
 def get_model() -> str:
     model = os.getenv("MODEL", "openai:Qwen/Qwen2.5-7B-Instruct")
     vllm_port = os.getenv("VLLM_PORT")
@@ -52,8 +35,6 @@ def get_model() -> str:
             print("stderr:", result.stderr)
     return model
 
-
-CONFIG = Config()
 MODEL = get_model()
 
 #* PubMed

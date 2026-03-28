@@ -5,7 +5,7 @@ A pipeline for automatically discovering, extracting, and structuring radiology 
 - `data/`: contains the final dataset table (e.g., `radiology_db.csv`)
 - `notebooks/`: tutorials and exploratory data analysis notebooks
 - `scripts/`: scripts for running the database building pipeline
-- `src/`: source code for querying PubMed, extracting dataset metadata, and building the database
+- `radiology_dataset_db/`: source code for querying PubMed, extracting dataset metadata, and building the database
 - `tests/`: pytest-based testing suite
 
 ## ⚙️ Installation
@@ -40,21 +40,23 @@ pip install -e .
 ### 3. Rename `.env_sample` to `.env` and fill in your Entrez email and API key (optional but recommended for higher rate limits)
 
 ## 🚀 Usage
-Modify .env and `src/config.py` as needed to customize PubMed query, LLM settings, and output paths. Then run:
+Modify `.env` and `radiology_dataset_db/config.py` as needed to customize PubMed query/LLM settings. Runtime defaults like modality/output paths are now configured via CLI args in `scripts/build_db.py`. Then run:
 ```bash
-python scripts/build_db.py --modality MODALITY
+python scripts/build_db.py --database-modality MODALITY
 ```
 
 ## Currently supported modalities:
-- Radiology: --modality radiology
-- Single-cell RNA-seq: --modality scrnaseq
-- Bulk genomics (e.g., bulk RNA-seq, WGS/WXS): --modality bulk_genomics
-- Spatial transcriptomics: --modality spatial_transcriptomics
+- Radiology: `--database-modality radiology`
+- Single-cell RNA-seq: `--database-modality scrnaseq`
+- Bulk genomics (e.g., bulk RNA-seq, WGS/WXS): `--database-modality bulk_genomics`
+- Spatial transcriptomics: `--database-modality spatial_transcriptomics`
+
+To enable parallel extraction, increase `--num-threads` (for example `--num-threads 8`).
 
 
 ## To add more modalities (e.g., genomics, pathology):
-1. Define new dataset schema and extraction instructions in `src/config.py`
-2. Implement new class and extraction function in `src/extract_MODALITY_dataset_information_llm.py`
+1. Define new dataset schema and extraction instructions in `radiology_dataset_db/config.py`
+2. Implement new class and extraction function in `radiology_dataset_db/extract_MODALITY_dataset_information_llm.py`
 3. Import and call the new extraction function in `scripts/build_db.py` and add a conditional to check the modality type
 4. Optionally, update .github/workflows/update_dbs.yml to run the pipeline for the new modality on a schedule
 All instructions are notaded in the code with comments like `#* add additional extraction instructions and functions for other modalities here, e.g. genomics, pathology, etc`
