@@ -3,8 +3,9 @@
 A pipeline for automatically discovering, extracting, and structuring radiology datasets from the literature.
 
 - `data/`: contains the final dataset table (e.g., `radiology_db.csv`)
-- `src/`: scripts for querying PubMed, extracting dataset metadata, and building the database
 - `notebooks/`: tutorials and exploratory data analysis notebooks
+- `scripts/`: scripts for running the database building pipeline
+- `src/`: source code for querying PubMed, extracting dataset metadata, and building the database
 - `tests/`: pytest-based testing suite
 
 ## ⚙️ Installation
