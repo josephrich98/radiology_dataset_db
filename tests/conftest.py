@@ -178,6 +178,7 @@ def _paper_ground_truth():
             "link": "https://doi.org/10.1038/s41597-022-01721-8",
             "date": "2023",
             "pmid": "36658144",
+            "name_aliases": ["medmnist", "med mnist", "medmnistv2", "med mnist v2"],
         },
         # "kits19": {
         #     "title": "The KiTS19 Challenge Data: 300 Kidney Tumor Cases with Clinical Context, CT Semantic Segmentations, and Surgical Outcomes",

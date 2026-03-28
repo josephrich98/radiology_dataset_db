@@ -42,8 +42,15 @@ pip install -e .
 ## 🚀 Usage
 Modify .env and `src/config.py` as needed to customize PubMed query, LLM settings, and output paths. Then run:
 ```bash
-python scripts/build_db.py
+python scripts/build_db.py --modality MODALITY
 ```
+
+## Currently supported modalities:
+- Radiology: --modality radiology
+- Single-cell RNA-seq: --modality scrnaseq
+- Bulk genomics (e.g., bulk RNA-seq, WGS/WXS): --modality bulk_genomics
+- Spatial transcriptomics: --modality spatial_transcriptomics
+
 
 ## To add more modalities (e.g., genomics, pathology):
 1. Define new dataset schema and extraction instructions in `src/config.py`
@@ -59,10 +66,11 @@ Pleas write a module very similar to extract_radiology_dataset_information_llm.p
 
 ## Testing
 ### Just unit tests:
-pytest
+`pytest`
 
 ### Just integration tests:
-pytest -m integration
+`pytest -m integration`
+(not all tests need to pass because LLM has some randomness, but most should pass consistently)
 
 ### All tests:
-pytest -m ""
+`pytest -m ""`
