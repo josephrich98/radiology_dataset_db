@@ -103,6 +103,7 @@ async def extract_spatial_transcriptomics_dataset_info_with_agent(
     title: str,
     abstract: str,
     publication_metadata: Optional[dict] = None,
+    num_tries: int = 1
 ):
     if not title or not abstract:
         logger.debug("Missing title or abstract, skipping extraction.")
@@ -118,12 +119,17 @@ async def extract_spatial_transcriptomics_dataset_info_with_agent(
             )
             return None
 
-        result = await dataset_agent.run(
-            EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS, deps=deps
-        )
+        for _ in range(num_tries):
+            result = await dataset_agent.run(
+                EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS, deps=deps
+            )
+            
+            output = result.output
+            logger.debug("LLM output: %s", output)
+            
+            if isinstance(output, SpatialTranscriptomicsDataset):
+                break
 
-        output = result.output
-        logger.debug("LLM output: %s", output)
         if isinstance(output, SpatialTranscriptomicsDataset):
             output.paper_title = title
 

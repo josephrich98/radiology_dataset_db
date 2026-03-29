@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 import pytest
 
-from conftest import _paper_ground_truth, _paper_irrelevant
+from conftest import _radiology_paper_ground_truth, _paper_irrelevant
 
 Entrez = pytest.importorskip("Bio.Entrez", reason="biopython is required for Entrez tests")
 config_module = pytest.importorskip(
@@ -14,7 +14,7 @@ pubmed_utils_module = pytest.importorskip(
     reason="radiology_dataset_db pubmed utils dependencies are required",
 )
 
-# keys from _paper_ground_truth that should resolve to DOI-backed papers
+# keys from _radiology_paper_ground_truth that should resolve to DOI-backed papers
 EXPECTED_PAPERS = (
     "radimagenet",
     "mimic_cxr",
@@ -129,7 +129,7 @@ def _assert_entrez_for_expected_dois(expected_dois, expected_dates=None, expect_
 @pytest.mark.integration
 @pytest.mark.slow
 def test_entrez_search_contains_expected_paper_dois():
-    papers = _paper_ground_truth()
+    papers = _radiology_paper_ground_truth()
 
     expected_papers = EXPECTED_PAPERS
     if expected_papers is None:

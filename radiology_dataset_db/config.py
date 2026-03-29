@@ -181,12 +181,11 @@ EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = "Extract spatial transcr
 
 #* add additional instructions and config variables for other modalities here, e.g. genomics, pathology, etc
 
-
-
 PUBMED_QUERY_DICT = {
     "radiology": PUBMED_QUERY_RADIOLOGY,
     "scrnaseq": PUBMED_QUERY_SCRNASEQ,
     "bulk_genomics": PUBMED_QUERY_BULK_GENOMICS,
     "spatial_transcriptomics": PUBMED_QUERY_SPATIAL_TRANSCRIPTOMICS,
-}  
+}
+SUPPORTED_MODALITIES = set(PUBMED_QUERY_DICT.keys())
 #* add additional PubMed queries for other modalities here, e.g. genomics, pathology, etc

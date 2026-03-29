@@ -6,7 +6,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-def _paper_ground_truth():
+def _radiology_paper_ground_truth():
     return {
         "radimagenet": {
             "title": "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning",
@@ -34,7 +34,6 @@ def _paper_ground_truth():
                 "modalities": ["CT", "MRI", "US"],
                 "body_regions": ["brain", "chest", "abdomen", "pelvis", "limbs"],
                 "additional_data": ["segmentation"],
-                "title_hint": "1.35 million annotated medical images",
             },
             "name_aliases": ["radimagenet"],
         },
@@ -64,7 +63,6 @@ def _paper_ground_truth():
                 "modalities": ["X-ray"],
                 "body_regions": ["chest"],
                 "additional_data": ["reports"],
-                "title_hint": "A total of 377,110 images are available",
             },
             "name_aliases": ["mimic", "mimiccxr", "mimic-cxr"],
         },
@@ -89,7 +87,6 @@ def _paper_ground_truth():
                 "modalities": ["MRI"],
                 "body_regions": ["brain"],
                 "additional_data": [],
-                "title_hint": "population-based cohort",
             },
             "name_aliases": ["ukbiobank", "uk biobank"],
         },
@@ -120,7 +117,6 @@ def _paper_ground_truth():
                 "modalities": ["CT", "MRI", "X-ray", "US", "PET"],
                 "body_regions": ["brain", "chest", "abdomen", "pelvis", "limbs"],
                 "additional_data": ["reports", "captions", "segmentation"],
-                "title_hint": "3.3 million images",
             },
             "name_aliases": ["tcia", "cancer imaging archive"],
         },
@@ -139,7 +135,6 @@ def _paper_ground_truth():
                 "modalities": ["CT"],
                 "body_regions": [],
                 "additional_data": [],
-                "title_hint": "Cancer Imaging Archive",
             },
             "name_aliases": ["merlin"],
         },
@@ -204,6 +199,86 @@ def _paper_ground_truth():
         }
     }
 
+def _scrnaseq_paper_ground_truth():
+    return {
+        "tabula_sapiens": {
+            "title": "Tabula Sapiens: A multiple-organ, single-cell transcriptomic atlas of humans",
+            "abstract": (
+                "We generated a cross-tissue single-cell transcriptomic atlas from multiple healthy human donors, "
+                "profiling hundreds of thousands of cells across many organs using complementary single-cell RNA-seq "
+                "protocols to support broad benchmarking and biological discovery."
+            ),
+            "link": "https://doi.org/10.1126/science.abl4896",
+            "date": "2022",
+            "pmid": "35549404",
+            "expected": {
+                "name": "Tabula Sapiens",
+                "num_patients": 15,
+                "sequencing_technology": ["10X", "SMART-Seq/SMARTSEQ"],
+                "disease": ["healthy"],
+                "species": ["human"],
+                "tissue": ["multi-organ"],
+                "cell_or_nuclei": "cell",
+                "dataset_link": None,
+            },
+            "name_aliases": ["tabulasapiens", "tabula sapiens"],
+        }
+    }
+
+def _bulk_genomics_paper_ground_truth():
+    return {
+        "tcga": {
+            "title": "The Cancer Genome Atlas Pan-Cancer analysis project",
+            "abstract": (
+                "We report integrative analyses across many tumor types using multi-platform genomic profiling data, "
+                "including whole-genome, exome, and bulk transcriptomic measurements, to create a broadly reusable "
+                "resource for cancer genomics research."
+            ),
+            "link": "https://doi.org/10.1038/ng.2764",
+            "date": "2013",
+            "pmid": "24071849",
+            "expected": {
+                "name": "TCGA",
+                "num_patients": 10000,
+                "modalities": ["WGS", "WXS", "bulk RNA"],
+                "raw_reads_available": True,
+                "disease": ["cancer"],
+                "species": ["human"],
+                "tissue": ["multi-tissue"],
+                "dataset_link": "https://portal.gdc.cancer.gov/",
+            },
+            "name_aliases": ["tcga", "cancer genome atlas"],
+        }
+    }
+
+def _spatial_transcriptomics_paper_ground_truth():
+    return {
+        "stereoseq_embryo": {
+            "title": "Spatiotemporal transcriptomic atlas of mouse organogenesis using DNA nanoball patterned arrays",
+            "abstract": (
+                "We generated a high-resolution spatial transcriptomic atlas across developmental stages with "
+                "Stereo-seq, enabling systematic characterization of tissue organization and cell-state transitions "
+                "during mouse organogenesis."
+            ),
+            "link": "https://doi.org/10.1016/j.cell.2022.04.003",
+            "date": "2022",
+            "pmid": "35568000",
+            "expected": {
+                "name": "Stereo-seq organogenesis atlas",
+                "num_patients": None,
+                "sequencing_technology": ["Stereo-seq"],
+                "disease": [],
+                "species": ["mouse"],
+                "tissue": ["multi-organ"],
+                "cell_or_nuclei": "cell",
+                "dataset_link": None,
+            },
+            "name_aliases": ["stereoseq", "stereo-seq"],
+        }
+    }
+
+#* add additional ground truth papers for other modalities here, e.g. genomics, pathology, etc
+
 
 def _paper_irrelevant():
     return {
@@ -221,7 +296,6 @@ def _paper_irrelevant():
                 "modalities": None,
                 "body_regions": None,
                 "additional_data": None,
-                "title_hint": None,
             },
             "name_aliases": None,
         },

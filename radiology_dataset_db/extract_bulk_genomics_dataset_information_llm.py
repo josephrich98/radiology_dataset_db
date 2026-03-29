@@ -90,6 +90,7 @@ async def extract_bulk_genomics_dataset_info_with_agent(
     title: str,
     abstract: str,
     publication_metadata: Optional[dict] = None,
+    num_tries: int = 1
 ):
     if not title or not abstract:
         logger.debug("Missing title or abstract, skipping extraction.")
@@ -105,12 +106,17 @@ async def extract_bulk_genomics_dataset_info_with_agent(
             )
             return None
 
-        result = await dataset_agent.run(
-            EXTRACTION_AGENT_INSTRUCTIONS_BULK_GENOMICS, deps=deps
-        )
+        for _ in range(num_tries):
+            result = await dataset_agent.run(
+                EXTRACTION_AGENT_INSTRUCTIONS_BULK_GENOMICS, deps=deps
+            )
 
-        output = result.output
-        logger.debug("LLM output: %s", output)
+            output = result.output
+            logger.debug("LLM output: %s", output)
+
+            if isinstance(output, BulkGenomicsDataset):
+                break
+
         if isinstance(output, BulkGenomicsDataset):
             output.paper_title = title
 

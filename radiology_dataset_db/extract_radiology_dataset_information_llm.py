@@ -161,6 +161,7 @@ async def extract_radiology_dataset_info_with_agent(
     title: str,
     abstract: str,
     publication_metadata: Optional[dict] = None,
+    num_tries: int = 1
 ):
     if not title or not abstract:
         logger.debug("Missing title or abstract, skipping extraction.")
@@ -176,12 +177,17 @@ async def extract_radiology_dataset_info_with_agent(
             return None
 
         #* Now run the extraction agent.
-        result = await dataset_agent.run(
-            EXTRACTION_AGENT_INSTRUCTIONS_RADIOLOGY, deps=deps
-        )
+        for _ in range(num_tries):
+            result = await dataset_agent.run(
+                EXTRACTION_AGENT_INSTRUCTIONS_RADIOLOGY, deps=deps
+            )
+            
+            output = result.output
+            logger.debug("LLM output: %s", output)
+            
+            if isinstance(output, RadiologyDataset):
+                break
 
-        output = result.output
-        logger.debug("LLM output: %s", output)
         if isinstance(output, RadiologyDataset):
             output.paper_title = title
             # output.paper_abstract = abstract
