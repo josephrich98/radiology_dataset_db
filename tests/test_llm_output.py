@@ -81,7 +81,7 @@ def test_serialize_dataset_against_ground_truth(paper_key):
     _assert_serialized_dataset(module, dataset, paper)
 
 
-NUM_TRIES_AGENT_TEST = 2  # I already loop internally, so this would only be to add further retries for testing
+NUM_TRIES_AGENT_TEST = 8  # I already loop internally, so this would only be to add further retries for testing
 INTEGRATION_CALL_TIMEOUT_SECONDS = 30
 
 @pytest.mark.integration

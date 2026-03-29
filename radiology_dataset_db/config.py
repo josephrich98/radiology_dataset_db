@@ -80,7 +80,7 @@ NOT (("Nuclear Magnetic Resonance"[tiab] OR NMR[tiab]) OR ("X-ray crystallograph
 """  # removed "Databases, Factual"[MeSH] because it dropped search space from 12319 to 3877 while keeping all of my test cases
 
 EXTRACTION_INSTRUCTIONS_RADIOLOGY = (
-    "You MUST extract a dataset name.\n"
+    "You MUST extract a dataset/benchmark name.\n"
     "Never return null for name.\n"
     "If uncertain, choose the most likely dataset or cohort name.\n"
     "Prefer names in the title.\n"
@@ -88,6 +88,7 @@ EXTRACTION_INSTRUCTIONS_RADIOLOGY = (
     "- UK Biobank\n"
     "- MIMIC-CXR\n"
     "- RadImageNet\n"
+    "- LiTS\n"
 )
 
 ADD_TEXT_EXTRACT_RADIOLOGY = f"""
@@ -183,9 +184,9 @@ EXTRACTION_AGENT_INSTRUCTIONS_SPATIAL_TRANSCRIPTOMICS = "Extract spatial transcr
 
 
 PUBMED_QUERY_DICT = {
-    "radiology": " ".join(PUBMED_QUERY_RADIOLOGY.split()),  # strip new lines
-    "scrnaseq": " ".join(PUBMED_QUERY_SCRNASEQ.split()),  # strip new lines
-    "bulk_genomics": " ".join(PUBMED_QUERY_BULK_GENOMICS.split()),  # strip new lines
-    "spatial_transcriptomics": " ".join(PUBMED_QUERY_SPATIAL_TRANSCRIPTOMICS.split()),  # strip new lines
+    "radiology": PUBMED_QUERY_RADIOLOGY,
+    "scrnaseq": PUBMED_QUERY_SCRNASEQ,
+    "bulk_genomics": PUBMED_QUERY_BULK_GENOMICS,
+    "spatial_transcriptomics": PUBMED_QUERY_SPATIAL_TRANSCRIPTOMICS,
 }  
 #* add additional PubMed queries for other modalities here, e.g. genomics, pathology, etc

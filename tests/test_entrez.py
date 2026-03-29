@@ -112,6 +112,7 @@ def _assert_entrez_for_expected_dois(expected_dois, expected_dates=None, expect_
         Entrez.api_key = os.getenv("ENTREZ_API_KEY")
 
     query = config_module.PUBMED_QUERY_RADIOLOGY
+    query = " ".join(query.split())  # normalize whitespace
 
     if expected_dates is None:  # search for all one time
         print("Doing single Entrez search without date filtering for expected DOIs.")

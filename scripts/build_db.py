@@ -45,8 +45,9 @@ def parse_args():
     parser.add_argument("--max-papers", type=int, default=9999, help="Maximum number of papers to retrieve from PubMed for processing.")
     parser.add_argument("--min-citations", type=int, default=25, help="Minimum number of citations for a paper to be included.")
     parser.add_argument("--citation-number-grace-period-years", type=int, default=1, help="Number of years to allow for citation count grace period.")  #  e.g., if set to 1 and the current year is 2026, then papers published in 2025 and 2026 will be exempt from the citation filter - set to 0 to disable the grace period
-    parser.add_argument("--num-tries-agent", type=int, default=5, help="Number of times to retry dataset extraction for each paper.")
+    parser.add_argument("--num-tries-agent", type=int, default=7, help="Number of times to retry dataset extraction for each paper.")
     parser.add_argument("--article-timeout-seconds", type=float, default=300.0, help="Max seconds allowed for processing a single article before marking it as failed. Set <=0 to disable timeout.")
+    parser.add_argument("--disable-check-dataset-is-available", action="store_true", help="Disable LLM availability check. By default, availability is checked and written to output as dataset_is_available.")
     parser.add_argument("-t", "--threads", type=int, default=1, help="Number of threads to use for parallel processing.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output files.")
 
@@ -119,19 +120,16 @@ async def process_publication_metadata(
         )
 
     if isinstance(dataset, BaseModel):
-        logger.debug(f"Extraction successful for article: {title}. Checking dataset availability...")
+        logger.debug(f"Extraction successful for article: {title}.")
+        dataset_is_available = None
         if check_dataset_is_available:
             full_text = None  # try_to_get_full_text(article)  # TODO: (1) write a function to extract just part of full text (eg just intro, methods, and data/code availability) and convert from byte --> str, and (2) determine what to do if full text not available (perhaps skip entirely?)
             dataset_is_available = await check_if_dataset_is_available(title, abstract, full_text=full_text)
-            if dataset_is_available:
-                logger.debug(f"Dataset described in article appears to be publicly available, adding to output: {title}")
-                return dataset, None
-            logger.debug(f"Dataset described in article is not currently available, skipping: {title}")
-            return None, publication_metadata
-        return dataset, None
+            logger.debug(f"Dataset availability check complete for article: {title}. dataset_is_available={dataset_is_available}")
+        return dataset, None, dataset_is_available
 
     logger.debug(f"Extraction failed for article: {title}")
-    return None, publication_metadata
+    return None, publication_metadata, None
 
 
 def process_article_threaded(
@@ -165,15 +163,15 @@ def process_article_threaded(
         logger.warning(f"Timed out processing article with title: {title} after {timeout_seconds}s")
         failed = dict(publication_metadata)
         failed["failure_reason"] = f"timeout_after_{timeout_seconds}_seconds"
-        return None, failed
+        return None, failed, None
     except Exception as e:
         logger.error(f"Error processing article with title: {title}. Error: {e}")
-        return None, publication_metadata
+        return None, publication_metadata, None
 
 # de-duplicate by keeping oldest (identical title first, then identical name)
-def drop_duplicates(df, subset_col, sort_col="paper_year", df_removed=None):
+def drop_duplicates(df, subset_col, sort_col="paper_year", ascending=True, df_removed=None):
     # df = df.copy()
-    df_sorted = df.sort_values(sort_col, ascending=True)
+    df_sorted = df.sort_values(sort_col, ascending=ascending)
     dup_mask = df_sorted.duplicated(subset=[subset_col], keep="first")
     df_kept = df_sorted[~dup_mask]
     df_removed_tmp = df_sorted[dup_mask]
@@ -188,9 +186,9 @@ def drop_duplicates(df, subset_col, sort_col="paper_year", df_removed=None):
     return df_kept, df_removed
 
 
-def save_progress(args, df_existing, extracted_datasets: List[BaseModel], failed_metadata: list, total_articles: int):
-    # Convert extracted datasets -> dict rows
-    rows = [d.model_dump() for d in extracted_datasets]
+def save_progress(args, df_existing, extracted_datasets: List[dict], failed_metadata: list, total_articles: int):
+    # extracted_datasets is already a list of row dicts
+    rows = extracted_datasets
     new_df = pd.DataFrame(rows)
 
     logger.info(f"Extracted {len(new_df)} datasets from {total_articles} articles processed/fetched.")
@@ -210,7 +208,7 @@ def save_progress(args, df_existing, extracted_datasets: List[BaseModel], failed
 
     # check if link works
     if "dataset_link" in new_df.columns:
-        new_df["link_works"] = new_df["dataset_link"].apply(check_url)
+        new_df["link_works"] = new_df["dataset_link"].apply(check_url, timeout=120)
         link_works_col = new_df.pop("link_works")  # place this column right after dataset_link column
         new_df.insert(new_df.columns.get_loc("dataset_link") + 1, "link_works", link_works_col)
 
@@ -237,7 +235,7 @@ def save_progress(args, df_existing, extracted_datasets: List[BaseModel], failed
         df, _ = drop_duplicates(df, subset_col="paper_title", sort_col="paper_year")
 
     if "name" in df.columns:
-        df, df_removed = drop_duplicates(df, subset_col="name", sort_col="paper_year", df_removed=None)
+        df, df_removed = drop_duplicates(df, subset_col="name", sort_col="paper_citation_count", ascending=False, df_removed=None)  # sort_col="paper_year", ascending=True
         if len(df_removed) > 0:
             removed_dict = df_removed.to_dict(orient="records")
             for entry in removed_dict:
@@ -265,6 +263,7 @@ async def main():
     args = parse_args()
 
     pubmed_query = PUBMED_QUERY_DICT.get(args.database_modality)
+    pubmed_query = " ".join(pubmed_query.split())
     if not pubmed_query:
         raise ValueError(f"No PubMed query found for modality {args.database_modality}. Please check the config or specify a supported modality. Supported modalities: {SUPPORTED_MODALITIES}.")
 
@@ -353,9 +352,13 @@ async def main():
         logger.warning("No articles found.")
         return
 
-    check_dataset_is_available = False
+    check_dataset_is_available = not args.disable_check_dataset_is_available
+    if check_dataset_is_available:
+        logger.info("Dataset availability check enabled. Results will be written to dataset_is_available column.")
+    else:
+        logger.info("Dataset availability check disabled.")
     timeout_seconds = args.article_timeout_seconds
-    extracted_datasets: List[BaseModel] = []
+    extracted_datasets: List[dict] = []
     failed_metadata = []
     interrupted = False
     if args.threads < 1:
@@ -376,7 +379,7 @@ async def main():
                         logger.debug(f"Article title already exists in output, skipping: {title}")
                         continue
 
-                    dataset, failure = await process_publication_metadata(
+                    dataset, failure, dataset_is_available = await process_publication_metadata(
                         publication_metadata,
                         check_dataset_is_available,
                         args.database_modality,
@@ -384,7 +387,10 @@ async def main():
                         timeout_seconds,
                     )
                     if dataset is not None:
-                        extracted_datasets.append(dataset)
+                        row = dataset.model_dump()
+                        if check_dataset_is_available:
+                            row["dataset_is_available"] = dataset_is_available
+                        extracted_datasets.append(row)
                     elif failure is not None:
                         failed_metadata.append(failure)
 
@@ -426,9 +432,12 @@ async def main():
                     for article in articles
                 ]
                 for task in tqdm(asyncio.as_completed(tasks), total=len(tasks)):
-                    dataset, failure = await task
+                    dataset, failure, dataset_is_available = await task
                     if dataset is not None:
-                        extracted_datasets.append(dataset)
+                        row = dataset.model_dump()
+                        if check_dataset_is_available:
+                            row["dataset_is_available"] = dataset_is_available
+                        extracted_datasets.append(row)
                     elif failure is not None:
                         failed_metadata.append(failure)
             except KeyboardInterrupt:
