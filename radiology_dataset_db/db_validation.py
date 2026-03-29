@@ -102,12 +102,12 @@ def compare_dbs(
     right_titles = _unique_title_set(df_right, merge_col)
 
     report = {
-        "unique_titles_left": len(left_titles),
-        "unique_titles_right": len(right_titles),
-        "unique_titles_combined": len(left_titles | right_titles),
+        "titles_left": len(left_titles),
+        "titles_right": len(right_titles),
+        "titles_union": len(left_titles | right_titles),
         "titles_only_left": len(left_titles - right_titles),
         "titles_only_right": len(right_titles - left_titles),
-        "titles_in_both": len(left_titles & right_titles),
+        "titles_intersection": len(left_titles & right_titles),
     }
 
     # merged_df = df_left.merge(
@@ -118,7 +118,6 @@ def compare_dbs(
     #     indicator=True,
     # )
     return report
-
 
 def verified_unverified_report(
     df_left: pd.DataFrame,
@@ -137,7 +136,7 @@ def verified_unverified_report(
 
     def build_sets(df: pd.DataFrame) -> Tuple[Set[str], Set[str]]:
         valid = df[[merge_col, verified_col]].copy()
-        valid["_verified_bool"] = valid[verified_col].apply(_to_bool)
+        valid["_verified_bool"] = valid[verified_col].apply(_to_bool).astype("boolean")
         valid = valid.dropna(subset=[merge_col, "_verified_bool"])
         valid[merge_col] = valid[merge_col].astype(str).str.strip()
         valid = valid[valid[merge_col] != ""]
@@ -150,16 +149,22 @@ def verified_unverified_report(
     right_verified, right_unverified = build_sets(df_right)
 
     return {
-        "verified_unique_left": len(left_verified),
-        "verified_unique_right": len(right_verified),
-        "verified_unique_combined": len(left_verified | right_verified),
+        "total_left": len(left_verified) + len(left_unverified),
+        "total_right": len(right_verified) + len(right_unverified),
+        "verified_left": len(left_verified),
+        "verified_right": len(right_verified),
+        "verified_union": len(left_verified | right_verified),
         "verified_only_left": len(left_verified - right_verified),
         "verified_only_right": len(right_verified - left_verified),
-        "unverified_unique_left": len(left_unverified),
-        "unverified_unique_right": len(right_unverified),
-        "unverified_unique_combined": len(left_unverified | right_unverified),
+        "verified_intersection": len(left_verified & right_verified),
+        "unverified_left": len(left_unverified),
+        "unverified_right": len(right_unverified),
+        "unverified_union": len(left_unverified | right_unverified),
         "unverified_only_left": len(left_unverified - right_unverified),
         "unverified_only_right": len(right_unverified - left_unverified),
+        "unverified_intersection": len(left_unverified & right_unverified),
+        "fraction_verified_left": len(left_verified) / (len(left_verified) + len(left_unverified)) if (len(left_verified) + len(left_unverified)) > 0 else float("nan"),  # aka PPV
+        "fraction_verified_right": len(right_verified) / (len(right_verified) + len(right_unverified)) if (len(right_verified) + len(right_unverified)) > 0 else float("nan"),  # aka PPV
     }
 
 

@@ -217,6 +217,7 @@ def search_pubmed(pubmed_query: str, max_results: Optional[int] = None, batch_si
 
 def fetch_pubmed_details(id_list, batch_size=200):
     results = []
+    id_list = [str(id) for id in id_list]  # ensure all IDs are strings
     for batch in tqdm(list(chunked(id_list, batch_size)), desc="Fetching PubMed details"):
         handle = Entrez.efetch(
             db="pubmed",
@@ -357,6 +358,16 @@ def _extract_mesh_terms(article) -> List[str]:
     try:
         mesh_list = article["MedlineCitation"].get("MeshHeadingList", [])
         return [mesh["DescriptorName"] for mesh in mesh_list]
+    except Exception:
+        return []
+
+def _extract_keywords(article) -> List[str]:
+    try:
+        keyword_list = article["MedlineCitation"].get("KeywordList", [])
+        keywords = []
+        for kw_list in keyword_list:
+            keywords.extend([str(k) for k in kw_list])
+        return keywords
     except Exception:
         return []
 
@@ -603,6 +614,7 @@ def extract_pubmed_metadata(article, citation_counts_by_pmid: Optional[Dict[str,
         "authors": _extract_authors(article),
         "journal": _extract_journal(article),
         "mesh_terms": mesh_terms,
+        "keywords": _extract_keywords(article),
         "pmid": pmid,
         "citation_count": citation_counts_by_pmid.get(pmid) if pmid else None,
         "pubmed_matches": pubmed_matches,

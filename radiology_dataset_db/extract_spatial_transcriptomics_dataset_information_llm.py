@@ -64,6 +64,7 @@ class SpatialTranscriptomicsDataset(BaseModel):
     pmid: Optional[str] = None
     paper_citation_count: Optional[int] = None
     mesh_terms: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)
     pubmed_matches: Optional[List[List[str]]] = None
 
 
@@ -134,6 +135,7 @@ async def extract_spatial_transcriptomics_dataset_info_with_agent(
             output.pmid = publication_metadata.get("pmid")
             output.paper_citation_count = publication_metadata.get("citation_count")
             output.mesh_terms = publication_metadata.get("mesh_terms")
+            output.keywords = publication_metadata.get("keywords")
             output.pubmed_matches = publication_metadata.get("pubmed_matches")
 
             if not output.name:

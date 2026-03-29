@@ -56,8 +56,8 @@ CLASSIFICATION_AGENT_INSTRUCTIONS = "Classify whether this paper creates a datas
 DATASET_AVAILABILITY_INSTRUCTIONS = (
     "Determine whether the paper indicates that its dataset is publicly available.\n"
     "Return is_publicly_available = true if there is direct evidence in the provided text such as:\n"
-    "- explicit language like 'open', 'publicly available', 'public', 'available', 'release', or a data availability statement\n"
-    "- a non-DOI URL (e.g., GitHub, Zenodo, institutional repository, challenge site, or dataset website)\n"
+    "- explicit language like 'open', 'publicly available', 'public', 'available', 'release', 'accessible', 'open-access', or a data availability statement\n"
+    "- a non-DOI URL (e.g., GitHub, Zenodo, Kaggle, institutional repository, challenge site, or dataset website)\n"
     "- wording that readers can access or download the dataset\n\n"
     "Return false if:\n"
     "- the text only says data are available on request\n"
