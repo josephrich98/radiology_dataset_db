@@ -55,8 +55,8 @@ To enable parallel extraction, increase `--num-threads` (for example `--num-thre
 
 
 ## To add more modalities (e.g., genomics, pathology):
-1. Define new dataset schema and extraction instructions in `radiology_dataset_db/config.py`
-2. Implement new class and extraction function in `radiology_dataset_db/extract_MODALITY_dataset_information_llm.py`
+1. Define new pubmed query and extraction instructions in `radiology_dataset_db/config.py`
+2. Implement new dataset schema class and extraction function in `radiology_dataset_db/extract_MODALITY_dataset_information_llm.py`
 3. Import and call the new extraction function in `scripts/build_db.py` and add a conditional to check the modality type
 4. Optionally, update .github/workflows/update_dbs.yml to run the pipeline for the new modality on a schedule
 5. Optionally, add some ground truth papers to tests/conftest.py, and add to get_modality_info in tests/test_llm_output.py to check that the new extraction function is working as expected
