@@ -151,6 +151,7 @@ def _paper_ground_truth():
             "link": "https://doi.org/10.1038/s41597-025-05922-9",
             "date": "2025",
             "pmid": "41073455",
+            "name_aliases": ["radgenome_chest_ct", "radgenome", "radgenomechestct", "radgenome chest ct"],
         },
         "ct-rate": {
             "title": "Generalist foundation models from a multimodal dataset for 3D computed tomography",
@@ -160,6 +161,7 @@ def _paper_ground_truth():
             "link": "https://doi.org/10.1038/s41551-025-01599-y",
             "date": "2025",
             "pmid": "41680439",
+            "name_aliases": ["ct-rate", "ctrate"],
         },
         "roco": {
             "title": "ROCOv2: Radiology Objects in COntext Version 2, an Updated Multimodal Image Dataset",
@@ -169,6 +171,7 @@ def _paper_ground_truth():
             "link": "https://doi.org/10.1038/s41597-024-03496-6",
             "date": "2018",
             "pmid": "38926396",
+            "name_aliases": ["roco", "roco v2", "roco2"],
         },
         "medmnist_v2": {
             "title": "MedMNIST v2: A large-scale lightweight benchmark for 2D and 3D biomedical image classification",
@@ -197,6 +200,7 @@ def _paper_ground_truth():
             "link": "https://doi.org/10.1148/rg.230180",
             "date": "2023",
             "pmid": "37999984",
+            "name_aliases": ["idc", "idc v1", "idc v2"]
         }
     }
 

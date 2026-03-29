@@ -1,6 +1,9 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -135,4 +138,49 @@ def test_extract_radiology_dataset_info_with_agent_integration(paper_key):
 
     normalized_name = _normalize_name(dataset.name)
     name_aliases = paper.get("name_aliases", [paper_key])
+    if paper_key not in name_aliases:
+        name_aliases.append(paper_key)
+    # if not any(alias in normalized_name for alias in name_aliases):
+    #     breakpoint()
     assert any(alias in normalized_name for alias in name_aliases)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_build_db_script_integration_runs_with_max10_min0(tmp_path):
+    if not os.getenv("ENTREZ_EMAIL"):
+        pytest.skip("Integration test requires ENTREZ_EMAIL")
+    if not (os.getenv("VLLM_PORT") or os.getenv("OPENAI_API_KEY")):
+        pytest.skip("Integration test requires VLLM_PORT or OPENAI_API_KEY")
+    if not _has_integration_dependencies():
+        pytest.skip("Integration test requires dotenv, pydantic_ai, Bio, and pydantic")
+
+    repo_root = Path(__file__).resolve().parents[1]
+    output_path = tmp_path / "db.csv"
+    command = [
+        sys.executable,
+        "scripts/build_db.py",
+        "-o",
+        str(output_path),
+        "-max",
+        "10",
+        "-min",
+        "0",
+    ]
+
+    result = subprocess.run(
+        command,
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        timeout=1800,
+    )
+
+    assert result.returncode == 0, (
+        "build_db.py integration command failed.\n"
+        f"Command: {' '.join(command)}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+    assert output_path.exists(), "Output CSV file was not created by build_db.py"

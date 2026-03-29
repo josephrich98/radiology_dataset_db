@@ -42,8 +42,8 @@ def parse_args():
     parser.add_argument("-m", "--database-modality", type=str, default="radiology", choices=SUPPORTED_MODALITIES, help=f"Modality of datasets to extract. Supported modalities: {SUPPORTED_MODALITIES}.")
     parser.add_argument("-o", "--output-path", type=str, default=None, help="Path to save the output CSV file. Defaults to data/{database_modality}_db.csv.")
     parser.add_argument("--output-path-failed", type=str, default=None, help="Path to save the CSV file containing metadata of articles for which dataset extraction failed.")
-    parser.add_argument("--max-papers", type=int, default=9999, help="Maximum number of papers to retrieve from PubMed for processing.")
-    parser.add_argument("--min-citations", type=int, default=25, help="Minimum number of citations for a paper to be included.")
+    parser.add_argument("-max", "--max-papers", type=int, default=9999, help="Maximum number of papers to retrieve from PubMed for processing.")
+    parser.add_argument("-min", "--min-citations", type=int, default=25, help="Minimum number of citations for a paper to be included.")
     parser.add_argument("--citation-number-grace-period-years", type=int, default=1, help="Number of years to allow for citation count grace period.")  #  e.g., if set to 1 and the current year is 2026, then papers published in 2025 and 2026 will be exempt from the citation filter - set to 0 to disable the grace period
     parser.add_argument("--num-tries-agent", type=int, default=7, help="Number of times to retry dataset extraction for each paper.")
     parser.add_argument("--article-timeout-seconds", type=float, default=300.0, help="Max seconds allowed for processing a single article before marking it as failed. Set <=0 to disable timeout.")
