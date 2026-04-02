@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Optional, Union
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent, RunContext
 
 from radiology_dataset_db.config import (
@@ -15,6 +15,7 @@ from radiology_dataset_db.config import (
     MODEL,
 )
 from radiology_dataset_db.is_database_paper_classifier_llm import llm_thinks_not_dataset_paper
+from radiology_dataset_db.utils import _unique_preserve_order
 
 logger = logging.getLogger(__name__)
 logger.setLevel(LOG_LEVEL)
@@ -41,12 +42,6 @@ class SequencingTechnology(str, Enum):
     OTHER = "other"
 
 
-class CellOrNuclei(str, Enum):
-    CELL = "cell"
-    NUCLEI = "nuclei"
-    BOTH = "both"
-
-
 class SpatialTranscriptomicsDataset(BaseModel):
     name: Optional[str] = Field(default=None)
     num_patients: Optional[int] = None
@@ -54,7 +49,6 @@ class SpatialTranscriptomicsDataset(BaseModel):
     disease: List[str] = Field(default_factory=list)
     species: List[str] = Field(default_factory=list)
     tissue: List[str] = Field(default_factory=list)
-    cell_or_nuclei: Optional[CellOrNuclei] = None
     dataset_link: Optional[str] = None
     paper_title: Optional[str] = None
     paper_link: Optional[str] = None
@@ -66,6 +60,11 @@ class SpatialTranscriptomicsDataset(BaseModel):
     mesh_terms: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
     pubmed_matches: Optional[List[List[str]]] = None
+
+    @field_validator("sequencing_technology", mode="after")
+    @classmethod
+    def make_unique(cls, v):
+        return _unique_preserve_order(v)
 
 
 @dataclass
